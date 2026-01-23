@@ -363,7 +363,7 @@ cdef class Engine:
         cdef lib.ma_result result = lib.ma_engine_stop(&self._engine)
         _check_result(result)
 
-    def play(self, str path, bint looping=False, float volume=1.0) -> "Sound":
+    def play(self, str path, bint looping=False, float volume=1.0) -> Sound:
         """
         Load and play a sound file.
 
@@ -3303,7 +3303,7 @@ cdef class ResourceManager:
             self._initialized = False
 
     def load(self, str path, bint stream=False, bint decode=True,
-             bint async_load=False, bint wait_init=True) -> "ResourceDataSource":
+             bint async_load=False, bint wait_init=True) -> ResourceDataSource:
         """
         Load an audio file as a data source.
 

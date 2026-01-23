@@ -4,64 +4,77 @@
 # This Makefile wraps common build commands for convenience.
 # The actual build is handled by scikit-build-core via pyproject.toml
 
-.PHONY: all sync build rebuild test lint format typecheck clean distclean wheel sdist dist check publish-test publish help
+.PHONY: all sync build rebuild test lint format typecheck clean \
+		distclean wheel sdist dist check publish-test publish help \
+		release
 
 # Default target
 all: build
 
 # Sync environment (initial setup, installs dependencies + package)
 sync:
-	uv sync
+	@uv sync
 
 # Build/rebuild the extension after code changes
 build:
-	uv sync --reinstall-package cyminiaudio
+	@uv sync --reinstall-package cyminiaudio
 
 # Alias for build
 rebuild: build
 
 # Run tests
 test:
-	uv run pytest tests/ -v
+	@uv run pytest tests/ -v
 
 # Lint with ruff
 lint:
-	uv run ruff check src/ tests/
+	@uv run ruff check src/ tests/
 
 # Format with ruff
 format:
-	uv run ruff format src/ tests/
-	uv run ruff check --fix src/ tests/
+	@uv run ruff format src/ tests/
+	@uv run ruff check --fix src/ tests/
 
 # Type check with mypy
 typecheck:
-	uv run mypy src/cyminiaudio/__init__.py tests/ --exclude '.venv'
+	@uv run mypy src/cyminiaudio/__init__.py tests/ --exclude '.venv'
 
 # Run a full quality assurance check
 qa: test lint typecheck format
 
 # Build wheel
 wheel:
-	uv build --wheel
+	@uv build --wheel
 
 # Build source distribution
 sdist:
-	uv build --sdist
+	@uv build --sdist
 
 # Build both wheel and sdist
-dist: wheel sdist
+dist: wheel sdist check
 
 # Check distributions with twine
 check:
-	uv run twine check dist/*
+	@uv run twine check dist/*
 
 # Publish to TestPyPI
-publish-test: dist check
-	uv run twine upload --repository testpypi dist/*
+publish-test: check
+	@uv run twine upload --repository testpypi dist/*
 
 # Publish to PyPI
-publish: dist check
-	uv run twine upload dist/*
+publish: check
+	@uv run twine upload dist/*
+
+# Release multiple wheels
+release:
+	@uv build --sdist
+	@uv build --wheel --python 3.9
+	@uv build --wheel --python 3.10
+	@uv build --wheel --python 3.11
+	@uv build --wheel --python 3.12
+	@uv build --wheel --python 3.13
+	@uv build --wheel --python 3.14
+	@uv run twine check dist/*
 
 # Clean build artifacts
 clean:

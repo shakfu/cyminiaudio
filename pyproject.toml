@@ -1,6 +1,6 @@
 [project]
 name = "cyminiaudio"
-version = "0.1.0"
+version = "0.1.1"
 description = "Minimal Python bindings for miniaudio"
 readme = "README.md"
 license = "Unlicense"
@@ -79,6 +79,17 @@ sdist.exclude = [
     "dist/",
     "*.egg-info/",
 ]
+wheel.exclude = [
+    "*.c",
+    "*.h",
+    "*.cpp",
+    "*.hpp",
+    "*.pyx",
+    "*.pxd",
+    "*.pxi",
+]
+
+
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
