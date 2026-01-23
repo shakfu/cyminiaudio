@@ -1,5 +1,5 @@
 [project]
-name = "minima"
+name = "cyminiaudio"
 version = "0.1.0"
 description = "Minimal Python bindings for miniaudio"
 readme = "README.md"
@@ -47,18 +47,18 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/minima"
-Documentation = "https://github.com/yourusername/minima#readme"
-Repository = "https://github.com/yourusername/minima.git"
-Issues = "https://github.com/yourusername/minima/issues"
-Changelog = "https://github.com/yourusername/minima/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/yourusername/cyminiaudio"
+Documentation = "https://github.com/yourusername/cyminiaudio#readme"
+Repository = "https://github.com/yourusername/cyminiaudio.git"
+Issues = "https://github.com/yourusername/cyminiaudio/issues"
+Changelog = "https://github.com/yourusername/cyminiaudio/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["scikit-build-core>=0.10", "cython>=3.0"]
 build-backend = "scikit_build_core.build"
 
 [tool.scikit-build]
-wheel.packages = ["src/minima"]
+wheel.packages = ["src/cyminiaudio"]
 cmake.version = ">=3.15"
 cmake.build-type = "Release"
 sdist.include = [
@@ -115,7 +115,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["minima"]
+known-first-party = ["cyminiaudio"]
 
 [tool.mypy]
 python_version = "3.10"

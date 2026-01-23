@@ -1,5 +1,5 @@
 """
-minima - Minimal Python bindings for miniaudio.
+cyminiaudio - Minimal Python bindings for miniaudio.
 
 A Python audio library providing:
 - High-level audio engine for sound playback
@@ -13,27 +13,27 @@ A Python audio library providing:
 - Resource manager for async loading
 
 Example:
-    import minima
+    import cyminiaudio
 
     # Simple playback
-    engine = minima.Engine()
+    engine = cyminiaudio.Engine()
     sound = engine.play("music.mp3")
     sound.volume = 0.5
 
     # Device info
-    devices = minima.list_devices()
+    devices = cyminiaudio.list_devices()
     print(devices['playback'])
 
     # Audio processing
-    lpf = minima.LowPassFilter(cutoff=1000.0)
+    lpf = cyminiaudio.LowPassFilter(cutoff=1000.0)
     filtered = lpf.process(audio_data)
 
     # Node graph
-    graph = minima.NodeGraph(channels=2)
-    lpf_node = minima.LPFNode(graph, cutoff=1000.0)
+    graph = cyminiaudio.NodeGraph(channels=2)
+    lpf_node = cyminiaudio.LPFNode(graph, cutoff=1000.0)
 """
 
-from minima._core import (
+from cyminiaudio._core import (
     RESOURCE_MANAGER_DATA_SOURCE_FLAG_ASYNC,
     RESOURCE_MANAGER_DATA_SOURCE_FLAG_DECODE,
     RESOURCE_MANAGER_DATA_SOURCE_FLAG_STREAM,

@@ -185,7 +185,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tests for version, enums, devices, engine, sound, decoder, waveform, noise, and exceptions
 
 ### Changed
-- Reorganized source layout to `src/minima/` structure
+- Reorganized source layout to `src/cyminiaudio/` structure
 - `list_devices()` now returns a dict with `DeviceInfo` objects instead of printing
 
 ### Deprecated
@@ -193,4 +193,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - `setup.py` - Replaced by `pyproject.toml` with scikit-build-core
-- Root-level `minima.pyx` and `libminiaudio.pxd` - Moved to `src/minima/`
+- Root-level `cyminiaudio.pyx` and `libminiaudio.pxd` - Moved to `src/cyminiaudio/`

@@ -1,7 +1,7 @@
 # cython: language_level=3
 # cython: embedsignature=True
 """
-minima._core - Cython bindings for miniaudio
+cyminiaudio._core - Cython bindings for miniaudio
 
 Provides Python bindings for the miniaudio audio library, including:
 - Audio engine for high-level playback
@@ -31,7 +31,7 @@ DEF DEVICE_SAMPLE_RATE = 48000
 # -----------------------------------------------------------------------------
 
 class MinimaError(Exception):
-    """Base exception for minima errors."""
+    """Base exception for cyminiaudio errors."""
     pass
 
 

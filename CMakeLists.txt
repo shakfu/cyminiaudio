@@ -9,12 +9,12 @@ add_custom_command(
     COMMAND Python::Interpreter -m cython
         -3
         --directive embedsignature=True
-        -I "${CMAKE_CURRENT_SOURCE_DIR}/src/minima"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/minima/_core.pyx"
+        -I "${CMAKE_CURRENT_SOURCE_DIR}/src/cyminiaudio"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/cyminiaudio/_core.pyx"
         -o ${CMAKE_CURRENT_BINARY_DIR}/_core.c
     DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/minima/_core.pyx
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/minima/libminiaudio.pxd
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cyminiaudio/_core.pyx
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cyminiaudio/libminiaudio.pxd
     COMMENT "Generating _core.c from _core.pyx"
 )
 
@@ -55,5 +55,5 @@ target_include_directories(_core PRIVATE
 )
 target_link_libraries(_core PRIVATE miniaudio)
 
-# Install to the minima package directory
-install(TARGETS _core DESTINATION minima)
+# Install to the cyminiaudio package directory
+install(TARGETS _core DESTINATION cyminiaudio)

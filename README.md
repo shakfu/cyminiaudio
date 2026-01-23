@@ -1,4 +1,4 @@
-# minima
+# cyminiaudio
 
 Minimal Python bindings for [miniaudio](https://miniaud.io/) (v0.11.21).
 
@@ -25,8 +25,8 @@ Requires Python 3.9+ and a C compiler.
 
 ```bash
 # Clone the repository
-git clone https://github.com/user/minima.git
-cd minima
+git clone https://github.com/user/cyminiaudio.git
+cd cyminiaudio
 
 # Install with uv (recommended)
 make build
@@ -40,11 +40,11 @@ pip install .
 ### Simple Playback
 
 ```python
-import minima
+import cyminiaudio
 import time
 
 # Create an audio engine and play a sound
-with minima.Engine() as engine:
+with cyminiaudio.Engine() as engine:
     sound = engine.play("music.mp3")
     sound.volume = 0.5
     time.sleep(5)  # Play for 5 seconds
@@ -53,8 +53,8 @@ with minima.Engine() as engine:
 ### Sound Control
 
 ```python
-with minima.Engine() as engine:
-    with minima.Sound(engine, "music.mp3") as sound:
+with cyminiaudio.Engine() as engine:
+    with cyminiaudio.Sound(engine, "music.mp3") as sound:
         sound.volume = 0.8
         sound.pan = -0.5      # Pan left
         sound.pitch = 1.2     # Higher pitch
@@ -67,8 +67,8 @@ with minima.Engine() as engine:
 
 ```python
 # Generate a sine wave
-waveform = minima.Waveform(
-    waveform_type=minima.WaveformType.SINE,
+waveform = cyminiaudio.Waveform(
+    waveform_type=cyminiaudio.WaveformType.SINE,
     amplitude=0.5,
     frequency=440.0
 )
@@ -79,8 +79,8 @@ data = waveform.read(1024)  # Read 1024 frames
 
 ```python
 # Apply a low-pass filter
-lpf = minima.LowPassFilter(cutoff=1000.0, order=2)
-waveform = minima.Waveform(frequency=440.0)
+lpf = cyminiaudio.LowPassFilter(cutoff=1000.0, order=2)
+waveform = cyminiaudio.Waveform(frequency=440.0)
 data = waveform.read(1024)
 filtered = lpf.process(data)
 ```
@@ -89,9 +89,9 @@ filtered = lpf.process(data)
 
 ```python
 # Create a processing graph with filters
-with minima.NodeGraph(channels=2) as graph:
-    lpf = minima.LPFNode(graph, cutoff=1000.0)
-    delay = minima.DelayNode(graph, delay_ms=250.0, decay=0.5)
+with cyminiaudio.NodeGraph(channels=2) as graph:
+    lpf = cyminiaudio.LPFNode(graph, cutoff=1000.0)
+    delay = cyminiaudio.DelayNode(graph, delay_ms=250.0, decay=0.5)
     # Connect nodes and process audio...
 ```
 
@@ -99,8 +99,8 @@ with minima.NodeGraph(channels=2) as graph:
 
 ```python
 # Record audio to a WAV file
-with minima.Encoder("output.wav", channels=2, sample_rate=48000) as encoder:
-    waveform = minima.Waveform(frequency=440.0)
+with cyminiaudio.Encoder("output.wav", channels=2, sample_rate=48000) as encoder:
+    waveform = cyminiaudio.Waveform(frequency=440.0)
     for _ in range(100):
         data = waveform.read(1024)
         encoder.write(data)
@@ -110,7 +110,7 @@ with minima.Encoder("output.wav", channels=2, sample_rate=48000) as encoder:
 
 ```python
 # List available audio devices
-devices = minima.list_devices()
+devices = cyminiaudio.list_devices()
 for dev in devices['playback']:
     print(f"{dev.name} (default: {dev.is_default})")
 ```
