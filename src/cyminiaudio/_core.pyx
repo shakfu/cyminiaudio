@@ -4758,6 +4758,656 @@ cdef class BiquadNode:
 
 
 # -----------------------------------------------------------------------------
+# Audio Buffer Reference (non-owning)
+# -----------------------------------------------------------------------------
+
+cdef class AudioBufferRef:
+    """
+    Non-owning reference to audio data.
+
+    Unlike AudioBuffer, this class does not own the data and will not
+    free it when destroyed. Useful for wrapping existing audio data.
+
+    Example:
+        data = get_audio_data_from_somewhere()
+        ref = AudioBufferRef(data, channels=2)
+        frames = ref.read(1024)
+    """
+    cdef lib.ma_audio_buffer_ref _ref
+    cdef bint _initialized
+    cdef lib.ma_uint32 _channels
+    cdef lib.ma_format _format
+    cdef object _data_ref  # Keep Python reference to prevent GC
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, bytes data, int channels=2, int format=Format.F32):
+        """
+        Initialize an audio buffer reference.
+
+        Args:
+            data: Audio data (PCM samples) - caller must keep this alive
+            channels: Number of channels
+            format: Sample format
+        """
+        cdef lib.ma_result result
+
+        # Calculate bytes per sample
+        cdef int bytes_per_sample = 4
+        if format == lib.ma_format_u8:
+            bytes_per_sample = 1
+        elif format == lib.ma_format_s16:
+            bytes_per_sample = 2
+        elif format == lib.ma_format_s24:
+            bytes_per_sample = 3
+
+        cdef lib.ma_uint64 size_in_frames = len(data) // (channels * bytes_per_sample)
+
+        self._data_ref = data  # Keep reference
+        result = lib.ma_audio_buffer_ref_init(
+            <lib.ma_format>format, channels, <const void*>data, size_in_frames, &self._ref
+        )
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize audio buffer ref (error {result})")
+
+        self._initialized = True
+        self._channels = channels
+        self._format = <lib.ma_format>format
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_audio_buffer_ref_uninit(&self._ref)
+            self._initialized = False
+
+    def set_data(self, bytes data):
+        """
+        Set new data for the buffer reference.
+
+        Args:
+            data: New audio data - caller must keep this alive
+        """
+        if not self._initialized:
+            raise MinimaError("Audio buffer ref not initialized")
+
+        cdef int bytes_per_sample = 4
+        if self._format == lib.ma_format_u8:
+            bytes_per_sample = 1
+        elif self._format == lib.ma_format_s16:
+            bytes_per_sample = 2
+        elif self._format == lib.ma_format_s24:
+            bytes_per_sample = 3
+
+        cdef lib.ma_uint64 size_in_frames = len(data) // (self._channels * bytes_per_sample)
+        self._data_ref = data
+        cdef lib.ma_result result = lib.ma_audio_buffer_ref_set_data(&self._ref, <const void*>data, size_in_frames)
+        _check_result(result)
+
+    def read(self, lib.ma_uint64 frame_count, bint loop=False) -> bytes:
+        """Read frames from the buffer."""
+        if not self._initialized:
+            raise MinimaError("Audio buffer ref not initialized")
+
+        cdef int bytes_per_sample = 4
+        if self._format == lib.ma_format_u8:
+            bytes_per_sample = 1
+        elif self._format == lib.ma_format_s16:
+            bytes_per_sample = 2
+        elif self._format == lib.ma_format_s24:
+            bytes_per_sample = 3
+
+        cdef size_t buffer_size = frame_count * self._channels * bytes_per_sample
+        cdef void* buffer = malloc(buffer_size)
+
+        if buffer == NULL:
+            raise MemoryError("Failed to allocate buffer")
+
+        cdef lib.ma_uint64 frames_read
+        try:
+            frames_read = lib.ma_audio_buffer_ref_read_pcm_frames(&self._ref, buffer, frame_count, loop)
+            return bytes((<char*>buffer)[:frames_read * self._channels * bytes_per_sample])
+        finally:
+            free(buffer)
+
+    def seek(self, lib.ma_uint64 frame_index):
+        """Seek to a specific frame position."""
+        if not self._initialized:
+            raise MinimaError("Audio buffer ref not initialized")
+        cdef lib.ma_result result = lib.ma_audio_buffer_ref_seek_to_pcm_frame(&self._ref, frame_index)
+        _check_result(result)
+
+    @property
+    def cursor(self) -> int:
+        """Current read position in frames."""
+        if not self._initialized:
+            return 0
+        cdef lib.ma_uint64 cursor = 0
+        lib.ma_audio_buffer_ref_get_cursor_in_pcm_frames(&self._ref, &cursor)
+        return cursor
+
+    @property
+    def length(self) -> int:
+        """Total length in frames."""
+        if not self._initialized:
+            return 0
+        cdef lib.ma_uint64 length = 0
+        lib.ma_audio_buffer_ref_get_length_in_pcm_frames(&self._ref, &length)
+        return length
+
+    @property
+    def at_end(self) -> bool:
+        """Whether the read cursor is at the end."""
+        if not self._initialized:
+            return True
+        return lib.ma_audio_buffer_ref_at_end(&self._ref)
+
+    @property
+    def available_frames(self) -> int:
+        """Number of frames available to read."""
+        if not self._initialized:
+            return 0
+        cdef lib.ma_uint64 available = 0
+        lib.ma_audio_buffer_ref_get_available_frames(&self._ref, &available)
+        return available
+
+
+# -----------------------------------------------------------------------------
+# Low-Level Device Access
+# -----------------------------------------------------------------------------
+
+cdef void _device_data_callback(lib.ma_device* pDevice, void* pOutput,
+                                const void* pInput, lib.ma_uint32 frameCount) noexcept nogil:
+    """Internal callback that dispatches to Python callback."""
+    pass  # Will be set up per-device
+
+
+cdef class Device:
+    """
+    Low-level audio device for direct hardware access.
+
+    Provides more control than Engine but requires manual callback handling.
+
+    Example:
+        device = Device(device_type=DeviceType.PLAYBACK)
+        device.start()
+        # ... use device ...
+        device.stop()
+    """
+    cdef lib.ma_device _device
+    cdef bint _initialized
+    cdef lib.ma_device_type _device_type
+    cdef lib.ma_uint32 _channels
+    cdef lib.ma_uint32 _sample_rate
+    cdef lib.ma_format _format
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, int device_type=DeviceType.PLAYBACK,
+                 int channels=2, int sample_rate=48000, int format=Format.F32):
+        """
+        Initialize a device.
+
+        Args:
+            device_type: Type of device (playback, capture, duplex)
+            channels: Number of channels
+            sample_rate: Sample rate in Hz
+            format: Sample format
+        """
+        cdef lib.ma_device_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_device_config_init(<lib.ma_device_type>device_type)
+        config.sampleRate = sample_rate
+
+        if device_type == lib.ma_device_type_playback or device_type == lib.ma_device_type_duplex:
+            config.playback.format = <lib.ma_format>format
+            config.playback.channels = channels
+
+        if device_type == lib.ma_device_type_capture or device_type == lib.ma_device_type_duplex:
+            config.capture.format = <lib.ma_format>format
+            config.capture.channels = channels
+
+        result = lib.ma_device_init(NULL, &config, &self._device)
+        if result != lib.MA_SUCCESS:
+            raise DeviceError(f"Failed to initialize device (error {result})")
+
+        self._initialized = True
+        self._device_type = <lib.ma_device_type>device_type
+        self._channels = channels
+        self._sample_rate = sample_rate
+        self._format = <lib.ma_format>format
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_device_uninit(&self._device)
+            self._initialized = False
+
+    def start(self):
+        """Start the device."""
+        if not self._initialized:
+            raise DeviceError("Device not initialized")
+        cdef lib.ma_result result = lib.ma_device_start(&self._device)
+        _check_result(result)
+
+    def stop(self):
+        """Stop the device."""
+        if not self._initialized:
+            raise DeviceError("Device not initialized")
+        cdef lib.ma_result result = lib.ma_device_stop(&self._device)
+        _check_result(result)
+
+    def close(self):
+        """Close the device and release resources."""
+        if self._initialized:
+            lib.ma_device_uninit(&self._device)
+            self._initialized = False
+
+    @property
+    def is_started(self) -> bool:
+        """Whether the device is started."""
+        if not self._initialized:
+            return False
+        return lib.ma_device_is_started(&self._device)
+
+    @property
+    def device_type(self) -> int:
+        """Device type (playback, capture, or duplex)."""
+        return self._device_type
+
+    @property
+    def sample_rate(self) -> int:
+        """Sample rate in Hz."""
+        if not self._initialized:
+            return 0
+        return self._device.sampleRate
+
+    @property
+    def channels(self) -> int:
+        """Number of channels."""
+        return self._channels
+
+    @property
+    def name(self) -> str:
+        """Device name."""
+        if not self._initialized:
+            return ""
+        if self._device_type == lib.ma_device_type_capture:
+            return self._device.capture.name.decode('utf-8', errors='replace')
+        else:
+            return self._device.playback.name.decode('utf-8', errors='replace')
+
+    @property
+    def state(self) -> int:
+        """Device state."""
+        if not self._initialized:
+            return 0
+        return lib.ma_device_get_state(&self._device)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
+
+cdef class Context:
+    """
+    Device context for enumeration and configuration.
+
+    Provides a shared context for multiple devices.
+
+    Example:
+        with Context() as ctx:
+            devices = ctx.get_devices()
+    """
+    cdef lib.ma_context _context
+    cdef bint _initialized
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self):
+        """Initialize a context with default settings."""
+        cdef lib.ma_result result
+
+        result = lib.ma_context_init(NULL, 0, NULL, &self._context)
+        if result != lib.MA_SUCCESS:
+            raise DeviceError(f"Failed to initialize context (error {result})")
+
+        self._initialized = True
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_context_uninit(&self._context)
+            self._initialized = False
+
+    def close(self):
+        """Close the context and release resources."""
+        if self._initialized:
+            lib.ma_context_uninit(&self._context)
+            self._initialized = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
+
+# -----------------------------------------------------------------------------
+# Data Source Node
+# -----------------------------------------------------------------------------
+
+cdef class DataSourceNode:
+    """
+    Node graph node that reads from a data source.
+
+    Example:
+        graph = NodeGraph(channels=2)
+        decoder = Decoder("audio.wav")
+        node = DataSourceNode(graph, decoder)
+    """
+    cdef lib.ma_data_source_node _node
+    cdef bint _initialized
+    cdef NodeGraph _graph
+    cdef object _data_source  # Keep reference
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, NodeGraph graph, object data_source):
+        """
+        Initialize a data source node.
+
+        Args:
+            graph: Parent node graph
+            data_source: A data source object (Decoder, Waveform, Noise, etc.)
+        """
+        cdef lib.ma_data_source_node_config config
+        cdef lib.ma_result result
+        cdef lib.ma_data_source* ds_ptr = NULL
+
+        # Get the data source pointer based on type
+        if isinstance(data_source, Decoder):
+            ds_ptr = <lib.ma_data_source*>&(<Decoder>data_source)._decoder
+        elif isinstance(data_source, Waveform):
+            ds_ptr = <lib.ma_data_source*>&(<Waveform>data_source)._waveform
+        elif isinstance(data_source, Noise):
+            ds_ptr = <lib.ma_data_source*>&(<Noise>data_source)._noise
+        elif isinstance(data_source, AudioBuffer):
+            ds_ptr = <lib.ma_data_source*>&(<AudioBuffer>data_source)._buffer
+        elif isinstance(data_source, AudioBufferRef):
+            ds_ptr = <lib.ma_data_source*>&(<AudioBufferRef>data_source)._ref
+        else:
+            raise MinimaError("Unsupported data source type")
+
+        config = lib.ma_data_source_node_config_init(ds_ptr)
+        result = lib.ma_data_source_node_init(graph._get_graph(), &config, NULL, &self._node)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize data source node (error {result})")
+
+        self._initialized = True
+        self._graph = graph
+        self._data_source = data_source  # Keep reference
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_data_source_node_uninit(&self._node, NULL)
+            self._initialized = False
+
+    @property
+    def is_looping(self) -> bool:
+        """Whether the data source is looping."""
+        if not self._initialized:
+            return False
+        return lib.ma_data_source_node_is_looping(&self._node)
+
+    @is_looping.setter
+    def is_looping(self, bint value):
+        if not self._initialized:
+            raise MinimaError("Data source node not initialized")
+        lib.ma_data_source_node_set_looping(&self._node, value)
+
+    @property
+    def state(self) -> int:
+        """Node state."""
+        if not self._initialized:
+            return 0
+        return lib.ma_node_get_state(<lib.ma_node*>&self._node)
+
+
+# -----------------------------------------------------------------------------
+# PCM Utility Functions
+# -----------------------------------------------------------------------------
+
+def copy_pcm_frames(bytes src, int format=Format.F32, int channels=2) -> bytes:
+    """
+    Copy PCM frames.
+
+    Args:
+        src: Source audio data
+        format: Sample format
+        channels: Number of channels
+
+    Returns:
+        Copy of the audio data
+    """
+    cdef int bytes_per_sample = 4
+    if format == lib.ma_format_u8:
+        bytes_per_sample = 1
+    elif format == lib.ma_format_s16:
+        bytes_per_sample = 2
+    elif format == lib.ma_format_s24:
+        bytes_per_sample = 3
+
+    cdef lib.ma_uint64 frame_count = len(src) // (channels * bytes_per_sample)
+    cdef size_t data_len = len(src)
+    cdef const char* src_ptr = <const char*>src
+    cdef void* dst = malloc(data_len)
+
+    if dst == NULL:
+        raise MemoryError("Failed to allocate buffer")
+
+    try:
+        lib.ma_copy_pcm_frames(dst, <const void*>src_ptr, frame_count, <lib.ma_format>format, channels)
+        return bytes((<char*>dst)[:data_len])
+    finally:
+        free(dst)
+
+
+def mix_pcm_frames_f32(bytes dst, bytes src, float volume=1.0, int channels=2) -> bytes:
+    """
+    Mix float32 PCM frames together.
+
+    Args:
+        dst: Destination audio data (will be mixed into)
+        src: Source audio data to mix
+        volume: Volume multiplier for source
+        channels: Number of channels
+
+    Returns:
+        Mixed audio data
+    """
+    if len(dst) != len(src):
+        raise MinimaError("Source and destination buffers must be the same size")
+
+    cdef lib.ma_uint64 frame_count = len(dst) // (channels * sizeof(float))
+    cdef size_t data_len = len(dst)
+    cdef const char* src_ptr = <const char*>src
+
+    # Create a copy of dst to mix into
+    cdef float* output = <float*>malloc(data_len)
+    if output == NULL:
+        raise MemoryError("Failed to allocate buffer")
+
+    try:
+        # Copy dst to output
+        memcpy(output, <const void*>dst, data_len)
+        # Mix src into output
+        lib.ma_mix_pcm_frames_f32(output, <const float*>src_ptr, frame_count, channels, volume)
+        return bytes((<char*>output)[:data_len])
+    finally:
+        free(output)
+
+
+def volume_linear_to_db(float factor) -> float:
+    """
+    Convert a linear volume factor to decibels.
+
+    Args:
+        factor: Linear volume factor (0.0 = silence, 1.0 = unity gain)
+
+    Returns:
+        Volume in decibels (negative infinity for 0.0, 0.0 for 1.0)
+    """
+    return lib.ma_volume_linear_to_db(factor)
+
+
+def volume_db_to_linear(float gain) -> float:
+    """
+    Convert a volume in decibels to a linear factor.
+
+    Args:
+        gain: Volume in decibels (0.0 = unity gain, -6.0 = half amplitude)
+
+    Returns:
+        Linear volume factor
+    """
+    return lib.ma_volume_db_to_linear(gain)
+
+
+def apply_volume_factor_pcm_frames(bytes data, float factor, int format=Format.F32, int channels=2) -> bytes:
+    """
+    Apply a volume factor to PCM frames in-place.
+
+    Args:
+        data: Audio data to modify
+        factor: Volume factor (0.0 = silence, 1.0 = unchanged, 2.0 = double)
+        format: Sample format
+        channels: Number of channels
+
+    Returns:
+        Audio data with volume applied
+    """
+    cdef int bytes_per_sample = 4
+    if format == lib.ma_format_u8:
+        bytes_per_sample = 1
+    elif format == lib.ma_format_s16:
+        bytes_per_sample = 2
+    elif format == lib.ma_format_s24:
+        bytes_per_sample = 3
+
+    cdef lib.ma_uint64 frame_count = len(data) // (channels * bytes_per_sample)
+    cdef size_t data_len = len(data)
+
+    # Create a mutable copy
+    cdef void* output = malloc(data_len)
+    if output == NULL:
+        raise MemoryError("Failed to allocate buffer")
+
+    try:
+        memcpy(output, <const void*><const char*>data, data_len)
+        lib.ma_apply_volume_factor_pcm_frames(output, frame_count, <lib.ma_format>format, channels, factor)
+        return bytes((<char*>output)[:data_len])
+    finally:
+        free(output)
+
+
+def copy_and_apply_volume_factor_pcm_frames(bytes src, float factor, int format=Format.F32, int channels=2) -> bytes:
+    """
+    Copy PCM frames and apply a volume factor.
+
+    Args:
+        src: Source audio data
+        factor: Volume factor (0.0 = silence, 1.0 = unchanged, 2.0 = double)
+        format: Sample format
+        channels: Number of channels
+
+    Returns:
+        Copy of audio data with volume applied
+    """
+    cdef int bytes_per_sample = 4
+    if format == lib.ma_format_u8:
+        bytes_per_sample = 1
+    elif format == lib.ma_format_s16:
+        bytes_per_sample = 2
+    elif format == lib.ma_format_s24:
+        bytes_per_sample = 3
+
+    cdef lib.ma_uint64 frame_count = len(src) // (channels * bytes_per_sample)
+    cdef size_t data_len = len(src)
+    cdef const char* src_ptr = <const char*>src
+
+    cdef void* dst = malloc(data_len)
+    if dst == NULL:
+        raise MemoryError("Failed to allocate buffer")
+
+    try:
+        lib.ma_copy_and_apply_volume_factor_pcm_frames(dst, <const void*>src_ptr, frame_count, <lib.ma_format>format, channels, factor)
+        return bytes((<char*>dst)[:data_len])
+    finally:
+        free(dst)
+
+
+def apply_volume_factor_pcm_frames_f32(bytes data, float factor, int channels=2) -> bytes:
+    """
+    Apply a volume factor to float32 PCM frames.
+
+    Args:
+        data: Float32 audio data to modify
+        factor: Volume factor (0.0 = silence, 1.0 = unchanged, 2.0 = double)
+        channels: Number of channels
+
+    Returns:
+        Audio data with volume applied
+    """
+    cdef lib.ma_uint64 frame_count = len(data) // (channels * sizeof(float))
+    cdef size_t data_len = len(data)
+
+    # Create a mutable copy
+    cdef float* output = <float*>malloc(data_len)
+    if output == NULL:
+        raise MemoryError("Failed to allocate buffer")
+
+    try:
+        memcpy(output, <const void*><const char*>data, data_len)
+        lib.ma_apply_volume_factor_pcm_frames_f32(output, frame_count, channels, factor)
+        return bytes((<char*>output)[:data_len])
+    finally:
+        free(output)
+
+
+def copy_and_apply_volume_factor_pcm_frames_f32(bytes src, float factor, int channels=2) -> bytes:
+    """
+    Copy float32 PCM frames and apply a volume factor.
+
+    Args:
+        src: Source float32 audio data
+        factor: Volume factor (0.0 = silence, 1.0 = unchanged, 2.0 = double)
+        channels: Number of channels
+
+    Returns:
+        Copy of audio data with volume applied
+    """
+    cdef lib.ma_uint64 frame_count = len(src) // (channels * sizeof(float))
+    cdef size_t data_len = len(src)
+    cdef const char* src_ptr = <const char*>src
+
+    cdef float* dst = <float*>malloc(data_len)
+    if dst == NULL:
+        raise MemoryError("Failed to allocate buffer")
+
+    try:
+        lib.ma_copy_and_apply_volume_factor_pcm_frames_f32(dst, <const float*>src_ptr, frame_count, channels, factor)
+        return bytes((<char*>dst)[:data_len])
+    finally:
+        free(dst)
+
+
+# -----------------------------------------------------------------------------
 # Legacy compatibility functions
 # -----------------------------------------------------------------------------
 

@@ -780,6 +780,188 @@ class TestAudioBuffer:
         assert buffer.at_end
 
 
+class TestAudioBufferRef:
+    """Test audio buffer reference class."""
+
+    def test_audio_buffer_ref_init(self):
+        """Test audio buffer ref initialization."""
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        ref = cyminiaudio.AudioBufferRef(data, channels=2)
+        assert ref.length == 1024
+        assert ref.cursor == 0
+
+    def test_audio_buffer_ref_read(self):
+        """Test reading from audio buffer ref."""
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        ref = cyminiaudio.AudioBufferRef(data, channels=2)
+        output = ref.read(512)
+        assert len(output) > 0
+        assert ref.cursor == 512
+
+    def test_audio_buffer_ref_set_data(self):
+        """Test setting new data on buffer ref."""
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        data1 = waveform.read(512)
+        data2 = waveform.read(1024)
+        ref = cyminiaudio.AudioBufferRef(data1, channels=2)
+        assert ref.length == 512
+        ref.set_data(data2)
+        assert ref.length == 1024
+
+
+class TestLowLevelDevice:
+    """Test low-level device access."""
+
+    def test_device_init(self):
+        """Test device initialization."""
+        device = cyminiaudio.Device(device_type=cyminiaudio.DeviceType.PLAYBACK)
+        assert device.device_type == cyminiaudio.DeviceType.PLAYBACK
+        assert device.channels == 2
+        device.close()
+
+    def test_device_context_manager(self):
+        """Test device as context manager."""
+        with cyminiaudio.Device() as device:
+            assert device.channels == 2
+
+    def test_device_properties(self):
+        """Test device properties."""
+        with cyminiaudio.Device() as device:
+            assert device.sample_rate > 0
+            assert len(device.name) > 0
+
+    def test_context_init(self):
+        """Test context initialization."""
+        ctx = cyminiaudio.Context()
+        ctx.close()
+
+    def test_context_context_manager(self):
+        """Test context as context manager."""
+        with cyminiaudio.Context():
+            pass
+
+
+class TestDataSourceNode:
+    """Test data source node."""
+
+    def test_data_source_node_with_waveform(self):
+        """Test data source node with waveform."""
+        with cyminiaudio.NodeGraph(channels=2) as graph:
+            waveform = cyminiaudio.Waveform(frequency=440.0)
+            node = cyminiaudio.DataSourceNode(graph, waveform)
+            assert node.state == cyminiaudio.NodeState.STARTED
+
+    def test_data_source_node_looping(self):
+        """Test data source node looping property."""
+        with cyminiaudio.NodeGraph(channels=2) as graph:
+            waveform = cyminiaudio.Waveform(frequency=440.0)
+            node = cyminiaudio.DataSourceNode(graph, waveform)
+            assert not node.is_looping
+            node.is_looping = True
+            assert node.is_looping
+
+
+class TestPCMUtilities:
+    """Test PCM utility functions."""
+
+    def test_copy_pcm_frames(self):
+        """Test copying PCM frames."""
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        copy = cyminiaudio.copy_pcm_frames(data, channels=2)
+        assert len(copy) == len(data)
+        assert copy == data
+
+    def test_mix_pcm_frames_f32(self):
+        """Test mixing PCM frames."""
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        data1 = waveform.read(1024)
+        data2 = waveform.read(1024)
+        mixed = cyminiaudio.mix_pcm_frames_f32(data1, data2, volume=0.5)
+        assert len(mixed) == len(data1)
+
+    def test_mix_pcm_frames_different_volumes(self):
+        """Test mixing with different volumes."""
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        data1 = waveform.read(512)
+        data2 = waveform.read(512)
+        # Mix with zero volume should return original
+        mixed = cyminiaudio.mix_pcm_frames_f32(data1, data2, volume=0.0)
+        assert len(mixed) == len(data1)
+
+
+class TestVolumeUtilities:
+    """Test volume utility functions."""
+
+    def test_volume_linear_to_db_unity(self):
+        """Test linear to dB conversion at unity gain."""
+        db = cyminiaudio.volume_linear_to_db(1.0)
+        assert abs(db) < 0.001  # Should be ~0 dB
+
+    def test_volume_linear_to_db_half(self):
+        """Test linear to dB conversion at half amplitude."""
+        db = cyminiaudio.volume_linear_to_db(0.5)
+        assert -7.0 < db < -5.0  # Should be ~-6.02 dB
+
+    def test_volume_db_to_linear_unity(self):
+        """Test dB to linear conversion at unity gain."""
+        linear = cyminiaudio.volume_db_to_linear(0.0)
+        assert abs(linear - 1.0) < 0.001
+
+    def test_volume_db_to_linear_half(self):
+        """Test dB to linear conversion at -6dB."""
+        linear = cyminiaudio.volume_db_to_linear(-6.0206)
+        assert abs(linear - 0.5) < 0.01
+
+    def test_volume_roundtrip(self):
+        """Test linear -> dB -> linear roundtrip."""
+        original = 0.75
+        db = cyminiaudio.volume_linear_to_db(original)
+        back = cyminiaudio.volume_db_to_linear(db)
+        assert abs(back - original) < 0.001
+
+    def test_apply_volume_factor_pcm_frames(self):
+        """Test applying volume to PCM frames."""
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        # Apply 0.5 volume
+        result = cyminiaudio.apply_volume_factor_pcm_frames(data, 0.5)
+        assert len(result) == len(data)
+
+    def test_apply_volume_factor_silence(self):
+        """Test applying zero volume (silence)."""
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        data = waveform.read(512)
+        result = cyminiaudio.apply_volume_factor_pcm_frames(data, 0.0)
+        # All samples should be zero
+        import struct
+        samples = struct.unpack(f'{len(result)//4}f', result)
+        assert all(s == 0.0 for s in samples)
+
+    def test_copy_and_apply_volume_factor_pcm_frames(self):
+        """Test copying and applying volume."""
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        result = cyminiaudio.copy_and_apply_volume_factor_pcm_frames(data, 0.5)
+        assert len(result) == len(data)
+
+    def test_apply_volume_factor_pcm_frames_f32(self):
+        """Test applying volume to f32 frames."""
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        result = cyminiaudio.apply_volume_factor_pcm_frames_f32(data, 2.0)
+        assert len(result) == len(data)
+
+    def test_copy_and_apply_volume_factor_pcm_frames_f32(self):
+        """Test copying and applying volume to f32 frames."""
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        result = cyminiaudio.copy_and_apply_volume_factor_pcm_frames_f32(data, 0.25)
+        assert len(result) == len(data)
+
+
 class TestAdditionalNodes:
     """Test additional node graph nodes."""
 

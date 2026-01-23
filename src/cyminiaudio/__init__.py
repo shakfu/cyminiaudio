@@ -90,6 +90,10 @@ from cyminiaudio._core import (
     Spatializer,
     # Audio buffers
     AudioBuffer,
+    AudioBufferRef,
+    # Low-level device access
+    Device,
+    Context,
     # Node graph
     NodeGraph,
     SplitterNode,
@@ -102,6 +106,7 @@ from cyminiaudio._core import (
     LoShelfNode,
     HiShelfNode,
     BiquadNode,
+    DataSourceNode,
     # Resource manager
     ResourceManager,
     ResourceDataSource,
@@ -117,6 +122,16 @@ from cyminiaudio._core import (
     RESOURCE_MANAGER_DATA_SOURCE_FLAG_DECODE,
     RESOURCE_MANAGER_DATA_SOURCE_FLAG_ASYNC,
     RESOURCE_MANAGER_DATA_SOURCE_FLAG_WAIT_INIT,
+    # PCM utility functions
+    copy_pcm_frames,
+    mix_pcm_frames_f32,
+    # Volume utility functions
+    volume_linear_to_db,
+    volume_db_to_linear,
+    apply_volume_factor_pcm_frames,
+    copy_and_apply_volume_factor_pcm_frames,
+    apply_volume_factor_pcm_frames_f32,
+    copy_and_apply_volume_factor_pcm_frames_f32,
     # Legacy functions
     play_sine,
     play_file,
@@ -180,6 +195,10 @@ __all__ = [
     "Spatializer",
     # Audio buffers
     "AudioBuffer",
+    "AudioBufferRef",
+    # Low-level device access
+    "Device",
+    "Context",
     # Node graph
     "NodeGraph",
     "SplitterNode",
@@ -192,6 +211,7 @@ __all__ = [
     "LoShelfNode",
     "HiShelfNode",
     "BiquadNode",
+    "DataSourceNode",
     # Resource manager
     "ResourceManager",
     "ResourceDataSource",
@@ -207,6 +227,16 @@ __all__ = [
     "RESOURCE_MANAGER_DATA_SOURCE_FLAG_DECODE",
     "RESOURCE_MANAGER_DATA_SOURCE_FLAG_ASYNC",
     "RESOURCE_MANAGER_DATA_SOURCE_FLAG_WAIT_INIT",
+    # PCM utility functions
+    "copy_pcm_frames",
+    "mix_pcm_frames_f32",
+    # Volume utility functions
+    "volume_linear_to_db",
+    "volume_db_to_linear",
+    "apply_volume_factor_pcm_frames",
+    "copy_and_apply_volume_factor_pcm_frames",
+    "apply_volume_factor_pcm_frames_f32",
+    "copy_and_apply_volume_factor_pcm_frames_f32",
     # Legacy functions
     "play_sine",
     "play_file",
