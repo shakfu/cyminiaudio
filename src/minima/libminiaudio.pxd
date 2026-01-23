@@ -403,7 +403,7 @@ cdef extern from "miniaudio.h":
     void ma_lpf_uninit(ma_lpf* pLPF, const ma_allocation_callbacks* pAllocationCallbacks)
     ma_result ma_lpf_reinit(const ma_lpf_config* pConfig, ma_lpf* pLPF)
     ma_result ma_lpf_clear_cache(ma_lpf* pLPF)
-    ma_result ma_lpf_process_pcm_frames(ma_lpf* pLPF, void* pFramesOut, const void* pFramesIn, ma_uint64 frameCount)
+    ma_result ma_lpf_process_pcm_frames(ma_lpf* pLPF, void* pFramesOut, const void* pFramesIn, ma_uint64 frameCount) nogil
     ma_uint32 ma_lpf_get_latency(const ma_lpf* pLPF)
 
 # -----------------------------------------------------------
@@ -473,7 +473,7 @@ cdef extern from "miniaudio.h":
     ma_result ma_hpf_init(const ma_hpf_config* pConfig, const ma_allocation_callbacks* pAllocationCallbacks, ma_hpf* pHPF)
     void ma_hpf_uninit(ma_hpf* pHPF, const ma_allocation_callbacks* pAllocationCallbacks)
     ma_result ma_hpf_reinit(const ma_hpf_config* pConfig, ma_hpf* pHPF)
-    ma_result ma_hpf_process_pcm_frames(ma_hpf* pHPF, void* pFramesOut, const void* pFramesIn, ma_uint64 frameCount)
+    ma_result ma_hpf_process_pcm_frames(ma_hpf* pHPF, void* pFramesOut, const void* pFramesIn, ma_uint64 frameCount) nogil
     ma_uint32 ma_hpf_get_latency(const ma_hpf* pHPF)
 
 # -----------------------------------------------------------
@@ -523,7 +523,7 @@ cdef extern from "miniaudio.h":
     ma_result ma_bpf_init(const ma_bpf_config* pConfig, const ma_allocation_callbacks* pAllocationCallbacks, ma_bpf* pBPF)
     void ma_bpf_uninit(ma_bpf* pBPF, const ma_allocation_callbacks* pAllocationCallbacks)
     ma_result ma_bpf_reinit(const ma_bpf_config* pConfig, ma_bpf* pBPF)
-    ma_result ma_bpf_process_pcm_frames(ma_bpf* pBPF, void* pFramesOut, const void* pFramesIn, ma_uint64 frameCount)
+    ma_result ma_bpf_process_pcm_frames(ma_bpf* pBPF, void* pFramesOut, const void* pFramesIn, ma_uint64 frameCount) nogil
     ma_uint32 ma_bpf_get_latency(const ma_bpf* pBPF)
 
 
@@ -551,7 +551,7 @@ cdef extern from "miniaudio.h":
     ma_result ma_notch2_init(const ma_notch2_config* pConfig, const ma_allocation_callbacks* pAllocationCallbacks, ma_notch2* pFilter)
     void ma_notch2_uninit(ma_notch2* pFilter, const ma_allocation_callbacks* pAllocationCallbacks)
     ma_result ma_notch2_reinit(const ma_notch2_config* pConfig, ma_notch2* pFilter)
-    ma_result ma_notch2_process_pcm_frames(ma_notch2* pFilter, void* pFramesOut, const void* pFramesIn, ma_uint64 frameCount)
+    ma_result ma_notch2_process_pcm_frames(ma_notch2* pFilter, void* pFramesOut, const void* pFramesIn, ma_uint64 frameCount) nogil
     ma_uint32 ma_notch2_get_latency(const ma_notch2* pFilter)
 
 
@@ -580,7 +580,7 @@ cdef extern from "miniaudio.h":
     ma_result ma_peak2_init(const ma_peak2_config* pConfig, const ma_allocation_callbacks* pAllocationCallbacks, ma_peak2* pFilter)
     void ma_peak2_uninit(ma_peak2* pFilter, const ma_allocation_callbacks* pAllocationCallbacks)
     ma_result ma_peak2_reinit(const ma_peak2_config* pConfig, ma_peak2* pFilter)
-    ma_result ma_peak2_process_pcm_frames(ma_peak2* pFilter, void* pFramesOut, const void* pFramesIn, ma_uint64 frameCount)
+    ma_result ma_peak2_process_pcm_frames(ma_peak2* pFilter, void* pFramesOut, const void* pFramesIn, ma_uint64 frameCount) nogil
     ma_uint32 ma_peak2_get_latency(const ma_peak2* pFilter)
 
 
@@ -609,7 +609,7 @@ cdef extern from "miniaudio.h":
     ma_result ma_loshelf2_init(const ma_loshelf2_config* pConfig, const ma_allocation_callbacks* pAllocationCallbacks, ma_loshelf2* pFilter)
     void ma_loshelf2_uninit(ma_loshelf2* pFilter, const ma_allocation_callbacks* pAllocationCallbacks)
     ma_result ma_loshelf2_reinit(const ma_loshelf2_config* pConfig, ma_loshelf2* pFilter)
-    ma_result ma_loshelf2_process_pcm_frames(ma_loshelf2* pFilter, void* pFramesOut, const void* pFramesIn, ma_uint64 frameCount)
+    ma_result ma_loshelf2_process_pcm_frames(ma_loshelf2* pFilter, void* pFramesOut, const void* pFramesIn, ma_uint64 frameCount) nogil
     ma_uint32 ma_loshelf2_get_latency(const ma_loshelf2* pFilter)
 
 # -----------------------------------------------------------
@@ -637,7 +637,7 @@ cdef extern from "miniaudio.h":
     ma_result ma_hishelf2_init(const ma_hishelf2_config* pConfig, const ma_allocation_callbacks* pAllocationCallbacks, ma_hishelf2* pFilter)
     void ma_hishelf2_uninit(ma_hishelf2* pFilter, const ma_allocation_callbacks* pAllocationCallbacks)
     ma_result ma_hishelf2_reinit(const ma_hishelf2_config* pConfig, ma_hishelf2* pFilter)
-    ma_result ma_hishelf2_process_pcm_frames(ma_hishelf2* pFilter, void* pFramesOut, const void* pFramesIn, ma_uint64 frameCount)
+    ma_result ma_hishelf2_process_pcm_frames(ma_hishelf2* pFilter, void* pFramesOut, const void* pFramesIn, ma_uint64 frameCount) nogil
     ma_uint32 ma_hishelf2_get_latency(const ma_hishelf2* pFilter)
 
 
@@ -666,7 +666,7 @@ cdef extern from "miniaudio.h":
     # API
     ma_result ma_delay_init(const ma_delay_config* pConfig, const ma_allocation_callbacks* pAllocationCallbacks, ma_delay* pDelay)
     void ma_delay_uninit(ma_delay* pDelay, const ma_allocation_callbacks* pAllocationCallbacks)
-    ma_result ma_delay_process_pcm_frames(ma_delay* pDelay, void* pFramesOut, const void* pFramesIn, ma_uint32 frameCount)
+    ma_result ma_delay_process_pcm_frames(ma_delay* pDelay, void* pFramesOut, const void* pFramesIn, ma_uint32 frameCount) nogil
     void ma_delay_set_wet(ma_delay* pDelay, float value)
     float ma_delay_get_wet(const ma_delay* pDelay)
     void ma_delay_set_dry(ma_delay* pDelay, float value)
@@ -2389,7 +2389,7 @@ cdef extern from "miniaudio.h":
     ma_result ma_decoder_init_file_w(const wchar_t* pFilePath, const ma_decoder_config* pConfig, ma_decoder* pDecoder)
     ma_result ma_decoder_uninit(ma_decoder* pDecoder)
     ma_result ma_decoder_read_pcm_frames(ma_decoder* pDecoder, void* pFramesOut, ma_uint64 frameCount, ma_uint64* pFramesRead) nogil
-    ma_result ma_decoder_seek_to_pcm_frame(ma_decoder* pDecoder, ma_uint64 frameIndex)
+    ma_result ma_decoder_seek_to_pcm_frame(ma_decoder* pDecoder, ma_uint64 frameIndex) nogil
     ma_result ma_decoder_get_data_format(ma_decoder* pDecoder, ma_format* pFormat, ma_uint32* pChannels, ma_uint32* pSampleRate, ma_channel* pChannelMap, size_t channelMapCap)
     ma_result ma_decoder_get_cursor_in_pcm_frames(ma_decoder* pDecoder, ma_uint64* pCursor)
     ma_result ma_decoder_get_length_in_pcm_frames(ma_decoder* pDecoder, ma_uint64* pLength)
@@ -2435,7 +2435,7 @@ cdef extern from "miniaudio.h":
     ma_result ma_encoder_init_file(const char* pFilePath, const ma_encoder_config* pConfig, ma_encoder* pEncoder)
     ma_result ma_encoder_init_file_w(const wchar_t* pFilePath, const ma_encoder_config* pConfig, ma_encoder* pEncoder)
     void ma_encoder_uninit(ma_encoder* pEncoder)
-    ma_result ma_encoder_write_pcm_frames(ma_encoder* pEncoder, const void* pFramesIn, ma_uint64 frameCount, ma_uint64* pFramesWritten)
+    ma_result ma_encoder_write_pcm_frames(ma_encoder* pEncoder, const void* pFramesIn, ma_uint64 frameCount, ma_uint64* pFramesWritten) nogil
 
 # --------------------------------------------------------------
 # Generation
@@ -2469,7 +2469,7 @@ cdef extern from "miniaudio.h":
     ma_result ma_waveform_init(const ma_waveform_config* pConfig, ma_waveform* pWaveform)
     void ma_waveform_uninit(ma_waveform* pWaveform)
     ma_result ma_waveform_read_pcm_frames(ma_waveform* pWaveform, void* pFramesOut, ma_uint64 frameCount, ma_uint64* pFramesRead) nogil
-    ma_result ma_waveform_seek_to_pcm_frame(ma_waveform* pWaveform, ma_uint64 frameIndex)
+    ma_result ma_waveform_seek_to_pcm_frame(ma_waveform* pWaveform, ma_uint64 frameIndex) nogil
     ma_result ma_waveform_set_amplitude(ma_waveform* pWaveform, double amplitude)
     ma_result ma_waveform_set_frequency(ma_waveform* pWaveform, double frequency)
     ma_result ma_waveform_set_type(ma_waveform* pWaveform, ma_waveform_type type)
@@ -2537,7 +2537,7 @@ cdef extern from "miniaudio.h":
     ma_result ma_noise_init_preallocated(const ma_noise_config* pConfig, void* pHeap, ma_noise* pNoise)
     ma_result ma_noise_init(const ma_noise_config* pConfig, const ma_allocation_callbacks* pAllocationCallbacks, ma_noise* pNoise)
     void ma_noise_uninit(ma_noise* pNoise, const ma_allocation_callbacks* pAllocationCallbacks)
-    ma_result ma_noise_read_pcm_frames(ma_noise* pNoise, void* pFramesOut, ma_uint64 frameCount, ma_uint64* pFramesRead)
+    ma_result ma_noise_read_pcm_frames(ma_noise* pNoise, void* pFramesOut, ma_uint64 frameCount, ma_uint64* pFramesRead) nogil
     ma_result ma_noise_set_amplitude(ma_noise* pNoise, double amplitude)
     ma_result ma_noise_set_seed(ma_noise* pNoise, ma_int32 seed)
     ma_result ma_noise_set_type(ma_noise* pNoise, ma_noise_type type)
@@ -2763,8 +2763,8 @@ cdef extern from "miniaudio.h":
     ma_result ma_resource_manager_data_source_init_w(ma_resource_manager* pResourceManager, const wchar_t* pName, ma_uint32 flags, const ma_resource_manager_pipeline_notifications* pNotifications, ma_resource_manager_data_source* pDataSource)
     ma_result ma_resource_manager_data_source_init_copy(ma_resource_manager* pResourceManager, const ma_resource_manager_data_source* pExistingDataSource, ma_resource_manager_data_source* pDataSource)
     ma_result ma_resource_manager_data_source_uninit(ma_resource_manager_data_source* pDataSource)
-    ma_result ma_resource_manager_data_source_read_pcm_frames(ma_resource_manager_data_source* pDataSource, void* pFramesOut, ma_uint64 frameCount, ma_uint64* pFramesRead)
-    ma_result ma_resource_manager_data_source_seek_to_pcm_frame(ma_resource_manager_data_source* pDataSource, ma_uint64 frameIndex)
+    ma_result ma_resource_manager_data_source_read_pcm_frames(ma_resource_manager_data_source* pDataSource, void* pFramesOut, ma_uint64 frameCount, ma_uint64* pFramesRead) nogil
+    ma_result ma_resource_manager_data_source_seek_to_pcm_frame(ma_resource_manager_data_source* pDataSource, ma_uint64 frameIndex) nogil
     ma_result ma_resource_manager_data_source_get_data_format(ma_resource_manager_data_source* pDataSource, ma_format* pFormat, ma_uint32* pChannels, ma_uint32* pSampleRate, ma_channel* pChannelMap, size_t channelMapCap)
     ma_result ma_resource_manager_data_source_get_cursor_in_pcm_frames(ma_resource_manager_data_source* pDataSource, ma_uint64* pCursor)
     ma_result ma_resource_manager_data_source_get_length_in_pcm_frames(ma_resource_manager_data_source* pDataSource, ma_uint64* pLength)
@@ -2908,7 +2908,7 @@ cdef extern from "miniaudio.h":
     ma_result ma_node_graph_init(const ma_node_graph_config* pConfig, const ma_allocation_callbacks* pAllocationCallbacks, ma_node_graph* pNodeGraph)
     void ma_node_graph_uninit(ma_node_graph* pNodeGraph, const ma_allocation_callbacks* pAllocationCallbacks)
     ma_node* ma_node_graph_get_endpoint(ma_node_graph* pNodeGraph)
-    ma_result ma_node_graph_read_pcm_frames(ma_node_graph* pNodeGraph, void* pFramesOut, ma_uint64 frameCount, ma_uint64* pFramesRead)
+    ma_result ma_node_graph_read_pcm_frames(ma_node_graph* pNodeGraph, void* pFramesOut, ma_uint64 frameCount, ma_uint64* pFramesRead) nogil
     ma_uint32 ma_node_graph_get_channels(const ma_node_graph* pNodeGraph)
     ma_uint64 ma_node_graph_get_time(const ma_node_graph* pNodeGraph)
     ma_result ma_node_graph_set_time(ma_node_graph* pNodeGraph, ma_uint64 globalTime)

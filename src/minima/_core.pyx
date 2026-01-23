@@ -1008,7 +1008,8 @@ cdef class Waveform:
         """Seek to a specific PCM frame."""
         if not self._initialized:
             raise MinimaError("Waveform not initialized")
-        lib.ma_waveform_seek_to_pcm_frame(&self._waveform, frame)
+        with nogil:
+            lib.ma_waveform_seek_to_pcm_frame(&self._waveform, frame)
 
     def read(self, lib.ma_uint64 frame_count) -> bytes:
         """
@@ -1031,7 +1032,8 @@ cdef class Waveform:
             raise MemoryError("Failed to allocate buffer")
 
         try:
-            lib.ma_waveform_read_pcm_frames(&self._waveform, buffer, frame_count, &frames_read)
+            with nogil:
+                lib.ma_waveform_read_pcm_frames(&self._waveform, buffer, frame_count, &frames_read)
             return bytes((<char*>buffer)[:frames_read * self._channels * sizeof(float)])
         finally:
             free(buffer)
@@ -1148,7 +1150,8 @@ cdef class Noise:
             raise MemoryError("Failed to allocate buffer")
 
         try:
-            lib.ma_noise_read_pcm_frames(&self._noise, buffer, frame_count, &frames_read)
+            with nogil:
+                lib.ma_noise_read_pcm_frames(&self._noise, buffer, frame_count, &frames_read)
             return bytes((<char*>buffer)[:frames_read * self._channels * sizeof(float)])
         finally:
             free(buffer)
@@ -1275,7 +1278,9 @@ cdef class Decoder:
         """Seek to a specific PCM frame."""
         if not self._initialized:
             raise DecoderError("Decoder not initialized")
-        cdef lib.ma_result result = lib.ma_decoder_seek_to_pcm_frame(&self._decoder, frame)
+        cdef lib.ma_result result
+        with nogil:
+            result = lib.ma_decoder_seek_to_pcm_frame(&self._decoder, frame)
         _check_result(result)
 
     def read(self, lib.ma_uint64 frame_count) -> bytes:
@@ -1315,7 +1320,8 @@ cdef class Decoder:
             raise MemoryError("Failed to allocate buffer")
 
         try:
-            lib.ma_decoder_read_pcm_frames(&self._decoder, buffer, frame_count, &frames_read)
+            with nogil:
+                lib.ma_decoder_read_pcm_frames(&self._decoder, buffer, frame_count, &frames_read)
             return bytes((<char*>buffer)[:frames_read * self._decoder.outputChannels * bytes_per_sample])
         finally:
             free(buffer)
@@ -1431,14 +1437,17 @@ cdef class LowPassFilter:
             raise MinimaError("Filter not initialized")
 
         cdef lib.ma_uint64 frame_count = len(data) // (self._channels * sizeof(float))
-        cdef float* output = <float*>malloc(len(data))
+        cdef size_t data_len = len(data)
+        cdef const char* input_ptr = <const char*>data
+        cdef float* output = <float*>malloc(data_len)
 
         if output == NULL:
             raise MemoryError("Failed to allocate buffer")
 
         try:
-            lib.ma_lpf_process_pcm_frames(&self._filter, output, <float*><char*>data, frame_count)
-            return bytes((<char*>output)[:len(data)])
+            with nogil:
+                lib.ma_lpf_process_pcm_frames(&self._filter, output, <float*>input_ptr, frame_count)
+            return bytes((<char*>output)[:data_len])
         finally:
             free(output)
 
@@ -1523,14 +1532,17 @@ cdef class HighPassFilter:
             raise MinimaError("Filter not initialized")
 
         cdef lib.ma_uint64 frame_count = len(data) // (self._channels * sizeof(float))
-        cdef float* output = <float*>malloc(len(data))
+        cdef size_t data_len = len(data)
+        cdef const char* input_ptr = <const char*>data
+        cdef float* output = <float*>malloc(data_len)
 
         if output == NULL:
             raise MemoryError("Failed to allocate buffer")
 
         try:
-            lib.ma_hpf_process_pcm_frames(&self._filter, output, <float*><char*>data, frame_count)
-            return bytes((<char*>output)[:len(data)])
+            with nogil:
+                lib.ma_hpf_process_pcm_frames(&self._filter, output, <float*>input_ptr, frame_count)
+            return bytes((<char*>output)[:data_len])
         finally:
             free(output)
 
@@ -1615,14 +1627,17 @@ cdef class BandPassFilter:
             raise MinimaError("Filter not initialized")
 
         cdef lib.ma_uint64 frame_count = len(data) // (self._channels * sizeof(float))
-        cdef float* output = <float*>malloc(len(data))
+        cdef size_t data_len = len(data)
+        cdef const char* input_ptr = <const char*>data
+        cdef float* output = <float*>malloc(data_len)
 
         if output == NULL:
             raise MemoryError("Failed to allocate buffer")
 
         try:
-            lib.ma_bpf_process_pcm_frames(&self._filter, output, <float*><char*>data, frame_count)
-            return bytes((<char*>output)[:len(data)])
+            with nogil:
+                lib.ma_bpf_process_pcm_frames(&self._filter, output, <float*>input_ptr, frame_count)
+            return bytes((<char*>output)[:data_len])
         finally:
             free(output)
 
@@ -1707,14 +1722,17 @@ cdef class NotchFilter:
             raise MinimaError("Filter not initialized")
 
         cdef lib.ma_uint64 frame_count = len(data) // (self._channels * sizeof(float))
-        cdef float* output = <float*>malloc(len(data))
+        cdef size_t data_len = len(data)
+        cdef const char* input_ptr = <const char*>data
+        cdef float* output = <float*>malloc(data_len)
 
         if output == NULL:
             raise MemoryError("Failed to allocate buffer")
 
         try:
-            lib.ma_notch2_process_pcm_frames(&self._filter, output, <float*><char*>data, frame_count)
-            return bytes((<char*>output)[:len(data)])
+            with nogil:
+                lib.ma_notch2_process_pcm_frames(&self._filter, output, <float*>input_ptr, frame_count)
+            return bytes((<char*>output)[:data_len])
         finally:
             free(output)
 
@@ -1802,14 +1820,17 @@ cdef class PeakFilter:
             raise MinimaError("Filter not initialized")
 
         cdef lib.ma_uint64 frame_count = len(data) // (self._channels * sizeof(float))
-        cdef float* output = <float*>malloc(len(data))
+        cdef size_t data_len = len(data)
+        cdef const char* input_ptr = <const char*>data
+        cdef float* output = <float*>malloc(data_len)
 
         if output == NULL:
             raise MemoryError("Failed to allocate buffer")
 
         try:
-            lib.ma_peak2_process_pcm_frames(&self._filter, output, <float*><char*>data, frame_count)
-            return bytes((<char*>output)[:len(data)])
+            with nogil:
+                lib.ma_peak2_process_pcm_frames(&self._filter, output, <float*>input_ptr, frame_count)
+            return bytes((<char*>output)[:data_len])
         finally:
             free(output)
 
@@ -1897,14 +1918,17 @@ cdef class LowShelfFilter:
             raise MinimaError("Filter not initialized")
 
         cdef lib.ma_uint64 frame_count = len(data) // (self._channels * sizeof(float))
-        cdef float* output = <float*>malloc(len(data))
+        cdef size_t data_len = len(data)
+        cdef const char* input_ptr = <const char*>data
+        cdef float* output = <float*>malloc(data_len)
 
         if output == NULL:
             raise MemoryError("Failed to allocate buffer")
 
         try:
-            lib.ma_loshelf2_process_pcm_frames(&self._filter, output, <float*><char*>data, frame_count)
-            return bytes((<char*>output)[:len(data)])
+            with nogil:
+                lib.ma_loshelf2_process_pcm_frames(&self._filter, output, <float*>input_ptr, frame_count)
+            return bytes((<char*>output)[:data_len])
         finally:
             free(output)
 
@@ -1992,14 +2016,17 @@ cdef class HighShelfFilter:
             raise MinimaError("Filter not initialized")
 
         cdef lib.ma_uint64 frame_count = len(data) // (self._channels * sizeof(float))
-        cdef float* output = <float*>malloc(len(data))
+        cdef size_t data_len = len(data)
+        cdef const char* input_ptr = <const char*>data
+        cdef float* output = <float*>malloc(data_len)
 
         if output == NULL:
             raise MemoryError("Failed to allocate buffer")
 
         try:
-            lib.ma_hishelf2_process_pcm_frames(&self._filter, output, <float*><char*>data, frame_count)
-            return bytes((<char*>output)[:len(data)])
+            with nogil:
+                lib.ma_hishelf2_process_pcm_frames(&self._filter, output, <float*>input_ptr, frame_count)
+            return bytes((<char*>output)[:data_len])
         finally:
             free(output)
 
@@ -2116,14 +2143,17 @@ cdef class Delay:
             raise MinimaError("Delay not initialized")
 
         cdef lib.ma_uint64 frame_count = len(data) // (self._channels * sizeof(float))
-        cdef float* output = <float*>malloc(len(data))
+        cdef size_t data_len = len(data)
+        cdef const char* input_ptr = <const char*>data
+        cdef float* output = <float*>malloc(data_len)
 
         if output == NULL:
             raise MemoryError("Failed to allocate buffer")
 
         try:
-            lib.ma_delay_process_pcm_frames(&self._delay, output, <float*><char*>data, <lib.ma_uint32>frame_count)
-            return bytes((<char*>output)[:len(data)])
+            with nogil:
+                lib.ma_delay_process_pcm_frames(&self._delay, output, <float*>input_ptr, <lib.ma_uint32>frame_count)
+            return bytes((<char*>output)[:data_len])
         finally:
             free(output)
 
@@ -2475,8 +2505,10 @@ cdef class Encoder:
         cdef lib.ma_uint64 frame_count = len(data) // self._bytes_per_frame
         cdef lib.ma_uint64 frames_written
         cdef lib.ma_result result
+        cdef const char* data_ptr = <const char*>data
 
-        result = lib.ma_encoder_write_pcm_frames(&self._encoder, <void*><char*>data, frame_count, &frames_written)
+        with nogil:
+            result = lib.ma_encoder_write_pcm_frames(&self._encoder, <void*>data_ptr, frame_count, &frames_written)
         _check_result(result)
 
         return frames_written
@@ -2490,6 +2522,1013 @@ cdef class Encoder:
 
     def __repr__(self):
         return f"Encoder({self._path!r})"
+
+
+# -----------------------------------------------------------------------------
+# Node Graph
+# -----------------------------------------------------------------------------
+
+class NodeState(IntEnum):
+    """State of a node in the audio graph."""
+    STARTED = lib.ma_node_state_started
+    STOPPED = lib.ma_node_state_stopped
+
+
+cdef class NodeGraph:
+    """
+    Audio processing node graph for custom mixing and effects chains.
+
+    The NodeGraph allows building custom audio processing pipelines by
+    connecting nodes together. Audio flows from source nodes through
+    processing nodes to the endpoint.
+
+    Example:
+        graph = NodeGraph(channels=2)
+        # Create nodes and connect them
+        splitter = SplitterNode(graph, channels=2)
+        lpf = LPFNode(graph, cutoff=1000.0)
+        # Connect: splitter -> lpf -> endpoint
+        splitter.attach_output(0, lpf, 0)
+        lpf.attach_output(0, graph.endpoint, 0)
+    """
+    cdef lib.ma_node_graph _graph
+    cdef bint _initialized
+    cdef lib.ma_uint32 _channels
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, int channels=2):
+        """
+        Initialize a node graph.
+
+        Args:
+            channels: Number of output channels
+        """
+        cdef lib.ma_node_graph_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_node_graph_config_init(channels)
+
+        result = lib.ma_node_graph_init(&config, NULL, &self._graph)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize node graph (error {result})")
+
+        self._initialized = True
+        self._channels = channels
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_node_graph_uninit(&self._graph, NULL)
+            self._initialized = False
+
+    def close(self):
+        """Close the node graph and release resources."""
+        if self._initialized:
+            lib.ma_node_graph_uninit(&self._graph, NULL)
+            self._initialized = False
+
+    @property
+    def channels(self) -> int:
+        """Get the number of channels."""
+        if not self._initialized:
+            raise MinimaError("Node graph not initialized")
+        return lib.ma_node_graph_get_channels(&self._graph)
+
+    @property
+    def time(self) -> int:
+        """Get the current time in PCM frames."""
+        if not self._initialized:
+            raise MinimaError("Node graph not initialized")
+        return lib.ma_node_graph_get_time(&self._graph)
+
+    @time.setter
+    def time(self, lib.ma_uint64 value):
+        """Set the current time in PCM frames."""
+        if not self._initialized:
+            raise MinimaError("Node graph not initialized")
+        lib.ma_node_graph_set_time(&self._graph, value)
+
+    def read(self, lib.ma_uint64 frame_count) -> bytes:
+        """
+        Read processed audio from the node graph.
+
+        Args:
+            frame_count: Number of frames to read
+
+        Returns:
+            Processed PCM data (float32)
+        """
+        if not self._initialized:
+            raise MinimaError("Node graph not initialized")
+
+        cdef lib.ma_uint64 frames_read
+        cdef size_t buffer_size = frame_count * self._channels * sizeof(float)
+        cdef float* buffer = <float*>malloc(buffer_size)
+
+        if buffer == NULL:
+            raise MemoryError("Failed to allocate buffer")
+
+        try:
+            with nogil:
+                lib.ma_node_graph_read_pcm_frames(&self._graph, buffer, frame_count, &frames_read)
+            return bytes((<char*>buffer)[:frames_read * self._channels * sizeof(float)])
+        finally:
+            free(buffer)
+
+    cdef lib.ma_node* _get_endpoint(self):
+        """Get the endpoint node (internal use)."""
+        return lib.ma_node_graph_get_endpoint(&self._graph)
+
+    cdef lib.ma_node_graph* _get_graph(self):
+        """Get the internal graph pointer (internal use)."""
+        return &self._graph
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
+
+cdef class SplitterNode:
+    """
+    Node that splits audio to multiple outputs.
+
+    Useful for routing the same audio to multiple processing chains.
+
+    Example:
+        splitter = SplitterNode(graph, channels=2, output_count=2)
+        splitter.attach_output(0, effect1, 0)
+        splitter.attach_output(1, effect2, 0)
+    """
+    cdef lib.ma_splitter_node _node
+    cdef bint _initialized
+    cdef NodeGraph _graph
+
+    def __cinit__(self):
+        self._initialized = False
+        self._graph = None
+
+    def __init__(self, NodeGraph graph not None, int channels=2, int output_bus_count=2):
+        """
+        Initialize a splitter node.
+
+        Args:
+            graph: The NodeGraph to add this node to
+            channels: Number of channels
+            output_bus_count: Number of output buses
+        """
+        if not graph._initialized:
+            raise MinimaError("Node graph not initialized")
+
+        cdef lib.ma_splitter_node_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_splitter_node_config_init(channels)
+        config.outputBusCount = output_bus_count
+
+        result = lib.ma_splitter_node_init(graph._get_graph(), &config, NULL, &self._node)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize splitter node (error {result})")
+
+        self._initialized = True
+        self._graph = graph
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_splitter_node_uninit(&self._node, NULL)
+            self._initialized = False
+
+    def attach_output(self, int output_bus, object target_node, int target_input_bus):
+        """
+        Attach an output bus to another node's input.
+
+        Args:
+            output_bus: Output bus index on this node
+            target_node: Target node to connect to
+            target_input_bus: Input bus index on the target node
+        """
+        if not self._initialized:
+            raise MinimaError("Splitter node not initialized")
+
+        cdef lib.ma_node* target
+        if isinstance(target_node, SplitterNode):
+            target = <lib.ma_node*>&(<SplitterNode>target_node)._node
+        elif isinstance(target_node, LPFNode):
+            target = <lib.ma_node*>&(<LPFNode>target_node)._node
+        elif isinstance(target_node, HPFNode):
+            target = <lib.ma_node*>&(<HPFNode>target_node)._node
+        elif isinstance(target_node, BPFNode):
+            target = <lib.ma_node*>&(<BPFNode>target_node)._node
+        elif isinstance(target_node, DelayNode):
+            target = <lib.ma_node*>&(<DelayNode>target_node)._node
+        else:
+            raise TypeError("Unsupported target node type")
+
+        cdef lib.ma_result result = lib.ma_node_attach_output_bus(
+            <lib.ma_node*>&self._node, output_bus, target, target_input_bus
+        )
+        _check_result(result)
+
+    def detach_output(self, int output_bus):
+        """Detach an output bus."""
+        if not self._initialized:
+            raise MinimaError("Splitter node not initialized")
+        cdef lib.ma_result result = lib.ma_node_detach_output_bus(<lib.ma_node*>&self._node, output_bus)
+        _check_result(result)
+
+    def detach_all_outputs(self):
+        """Detach all output buses."""
+        if not self._initialized:
+            raise MinimaError("Splitter node not initialized")
+        cdef lib.ma_result result = lib.ma_node_detach_all_output_buses(<lib.ma_node*>&self._node)
+        _check_result(result)
+
+    @property
+    def state(self) -> int:
+        """Get the node state."""
+        if not self._initialized:
+            raise MinimaError("Splitter node not initialized")
+        return lib.ma_node_get_state(<lib.ma_node*>&self._node)
+
+    @state.setter
+    def state(self, int value):
+        """Set the node state."""
+        if not self._initialized:
+            raise MinimaError("Splitter node not initialized")
+        lib.ma_node_set_state(<lib.ma_node*>&self._node, <lib.ma_node_state>value)
+
+    def set_output_volume(self, int output_bus, float volume):
+        """Set the volume of an output bus."""
+        if not self._initialized:
+            raise MinimaError("Splitter node not initialized")
+        lib.ma_node_set_output_bus_volume(<lib.ma_node*>&self._node, output_bus, volume)
+
+    def get_output_volume(self, int output_bus) -> float:
+        """Get the volume of an output bus."""
+        if not self._initialized:
+            raise MinimaError("Splitter node not initialized")
+        return lib.ma_node_get_output_bus_volume(<lib.ma_node*>&self._node, output_bus)
+
+
+cdef class LPFNode:
+    """
+    Low-pass filter node for the node graph.
+
+    Example:
+        lpf = LPFNode(graph, cutoff=1000.0, order=2)
+        source.attach_output(0, lpf, 0)
+        lpf.attach_output(0, graph.endpoint, 0)
+    """
+    cdef lib.ma_lpf_node _node
+    cdef bint _initialized
+    cdef NodeGraph _graph
+    cdef lib.ma_uint32 _channels
+    cdef lib.ma_uint32 _sample_rate
+
+    def __cinit__(self):
+        self._initialized = False
+        self._graph = None
+
+    def __init__(self, NodeGraph graph not None, double cutoff=1000.0, int order=2,
+                 int channels=2, int sample_rate=48000):
+        """
+        Initialize a low-pass filter node.
+
+        Args:
+            graph: The NodeGraph to add this node to
+            cutoff: Cutoff frequency in Hz
+            order: Filter order (1-8)
+            channels: Number of channels
+            sample_rate: Sample rate in Hz
+        """
+        if not graph._initialized:
+            raise MinimaError("Node graph not initialized")
+
+        cdef lib.ma_lpf_node_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_lpf_node_config_init(channels, sample_rate, cutoff, order)
+
+        result = lib.ma_lpf_node_init(graph._get_graph(), &config, NULL, &self._node)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize LPF node (error {result})")
+
+        self._initialized = True
+        self._graph = graph
+        self._channels = channels
+        self._sample_rate = sample_rate
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_lpf_node_uninit(&self._node, NULL)
+            self._initialized = False
+
+    def reinit(self, double cutoff, int order=2):
+        """Reinitialize with new parameters."""
+        if not self._initialized:
+            raise MinimaError("LPF node not initialized")
+        cdef lib.ma_lpf_config config = lib.ma_lpf_config_init(
+            lib.ma_format_f32, self._channels, self._sample_rate, cutoff, order
+        )
+        cdef lib.ma_result result = lib.ma_lpf_node_reinit(&config, &self._node)
+        _check_result(result)
+
+    def attach_output(self, int output_bus, object target_node, int target_input_bus):
+        """Attach output to another node."""
+        if not self._initialized:
+            raise MinimaError("LPF node not initialized")
+
+        cdef lib.ma_node* target
+        if isinstance(target_node, SplitterNode):
+            target = <lib.ma_node*>&(<SplitterNode>target_node)._node
+        elif isinstance(target_node, LPFNode):
+            target = <lib.ma_node*>&(<LPFNode>target_node)._node
+        elif isinstance(target_node, HPFNode):
+            target = <lib.ma_node*>&(<HPFNode>target_node)._node
+        elif isinstance(target_node, BPFNode):
+            target = <lib.ma_node*>&(<BPFNode>target_node)._node
+        elif isinstance(target_node, DelayNode):
+            target = <lib.ma_node*>&(<DelayNode>target_node)._node
+        else:
+            raise TypeError("Unsupported target node type")
+
+        cdef lib.ma_result result = lib.ma_node_attach_output_bus(
+            <lib.ma_node*>&self._node, output_bus, target, target_input_bus
+        )
+        _check_result(result)
+
+    def detach_output(self, int output_bus):
+        """Detach an output bus."""
+        if not self._initialized:
+            raise MinimaError("LPF node not initialized")
+        lib.ma_node_detach_output_bus(<lib.ma_node*>&self._node, output_bus)
+
+    @property
+    def state(self) -> int:
+        """Get the node state."""
+        if not self._initialized:
+            raise MinimaError("LPF node not initialized")
+        return lib.ma_node_get_state(<lib.ma_node*>&self._node)
+
+    @state.setter
+    def state(self, int value):
+        """Set the node state."""
+        if not self._initialized:
+            raise MinimaError("LPF node not initialized")
+        lib.ma_node_set_state(<lib.ma_node*>&self._node, <lib.ma_node_state>value)
+
+
+cdef class HPFNode:
+    """
+    High-pass filter node for the node graph.
+
+    Example:
+        hpf = HPFNode(graph, cutoff=200.0, order=2)
+    """
+    cdef lib.ma_hpf_node _node
+    cdef bint _initialized
+    cdef NodeGraph _graph
+    cdef lib.ma_uint32 _channels
+    cdef lib.ma_uint32 _sample_rate
+
+    def __cinit__(self):
+        self._initialized = False
+        self._graph = None
+
+    def __init__(self, NodeGraph graph not None, double cutoff=200.0, int order=2,
+                 int channels=2, int sample_rate=48000):
+        """
+        Initialize a high-pass filter node.
+
+        Args:
+            graph: The NodeGraph to add this node to
+            cutoff: Cutoff frequency in Hz
+            order: Filter order (1-8)
+            channels: Number of channels
+            sample_rate: Sample rate in Hz
+        """
+        if not graph._initialized:
+            raise MinimaError("Node graph not initialized")
+
+        cdef lib.ma_hpf_node_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_hpf_node_config_init(channels, sample_rate, cutoff, order)
+
+        result = lib.ma_hpf_node_init(graph._get_graph(), &config, NULL, &self._node)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize HPF node (error {result})")
+
+        self._initialized = True
+        self._graph = graph
+        self._channels = channels
+        self._sample_rate = sample_rate
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_hpf_node_uninit(&self._node, NULL)
+            self._initialized = False
+
+    def reinit(self, double cutoff, int order=2):
+        """Reinitialize with new parameters."""
+        if not self._initialized:
+            raise MinimaError("HPF node not initialized")
+        cdef lib.ma_hpf_config config = lib.ma_hpf_config_init(
+            lib.ma_format_f32, self._channels, self._sample_rate, cutoff, order
+        )
+        cdef lib.ma_result result = lib.ma_hpf_node_reinit(&config, &self._node)
+        _check_result(result)
+
+    def attach_output(self, int output_bus, object target_node, int target_input_bus):
+        """Attach output to another node."""
+        if not self._initialized:
+            raise MinimaError("HPF node not initialized")
+
+        cdef lib.ma_node* target
+        if isinstance(target_node, SplitterNode):
+            target = <lib.ma_node*>&(<SplitterNode>target_node)._node
+        elif isinstance(target_node, LPFNode):
+            target = <lib.ma_node*>&(<LPFNode>target_node)._node
+        elif isinstance(target_node, HPFNode):
+            target = <lib.ma_node*>&(<HPFNode>target_node)._node
+        elif isinstance(target_node, BPFNode):
+            target = <lib.ma_node*>&(<BPFNode>target_node)._node
+        elif isinstance(target_node, DelayNode):
+            target = <lib.ma_node*>&(<DelayNode>target_node)._node
+        else:
+            raise TypeError("Unsupported target node type")
+
+        cdef lib.ma_result result = lib.ma_node_attach_output_bus(
+            <lib.ma_node*>&self._node, output_bus, target, target_input_bus
+        )
+        _check_result(result)
+
+    def detach_output(self, int output_bus):
+        """Detach an output bus."""
+        if not self._initialized:
+            raise MinimaError("HPF node not initialized")
+        lib.ma_node_detach_output_bus(<lib.ma_node*>&self._node, output_bus)
+
+    @property
+    def state(self) -> int:
+        """Get the node state."""
+        if not self._initialized:
+            raise MinimaError("HPF node not initialized")
+        return lib.ma_node_get_state(<lib.ma_node*>&self._node)
+
+    @state.setter
+    def state(self, int value):
+        """Set the node state."""
+        if not self._initialized:
+            raise MinimaError("HPF node not initialized")
+        lib.ma_node_set_state(<lib.ma_node*>&self._node, <lib.ma_node_state>value)
+
+
+cdef class BPFNode:
+    """
+    Band-pass filter node for the node graph.
+
+    Example:
+        bpf = BPFNode(graph, cutoff=1000.0, order=2)
+    """
+    cdef lib.ma_bpf_node _node
+    cdef bint _initialized
+    cdef NodeGraph _graph
+    cdef lib.ma_uint32 _channels
+    cdef lib.ma_uint32 _sample_rate
+
+    def __cinit__(self):
+        self._initialized = False
+        self._graph = None
+
+    def __init__(self, NodeGraph graph not None, double cutoff=1000.0, int order=2,
+                 int channels=2, int sample_rate=48000):
+        """
+        Initialize a band-pass filter node.
+
+        Args:
+            graph: The NodeGraph to add this node to
+            cutoff: Center frequency in Hz
+            order: Filter order (must be even, 2-8)
+            channels: Number of channels
+            sample_rate: Sample rate in Hz
+        """
+        if not graph._initialized:
+            raise MinimaError("Node graph not initialized")
+
+        cdef lib.ma_bpf_node_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_bpf_node_config_init(channels, sample_rate, cutoff, order)
+
+        result = lib.ma_bpf_node_init(graph._get_graph(), &config, NULL, &self._node)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize BPF node (error {result})")
+
+        self._initialized = True
+        self._graph = graph
+        self._channels = channels
+        self._sample_rate = sample_rate
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_bpf_node_uninit(&self._node, NULL)
+            self._initialized = False
+
+    def reinit(self, double cutoff, int order=2):
+        """Reinitialize with new parameters."""
+        if not self._initialized:
+            raise MinimaError("BPF node not initialized")
+        cdef lib.ma_bpf_config config = lib.ma_bpf_config_init(
+            lib.ma_format_f32, self._channels, self._sample_rate, cutoff, order
+        )
+        cdef lib.ma_result result = lib.ma_bpf_node_reinit(&config, &self._node)
+        _check_result(result)
+
+    def attach_output(self, int output_bus, object target_node, int target_input_bus):
+        """Attach output to another node."""
+        if not self._initialized:
+            raise MinimaError("BPF node not initialized")
+
+        cdef lib.ma_node* target
+        if isinstance(target_node, SplitterNode):
+            target = <lib.ma_node*>&(<SplitterNode>target_node)._node
+        elif isinstance(target_node, LPFNode):
+            target = <lib.ma_node*>&(<LPFNode>target_node)._node
+        elif isinstance(target_node, HPFNode):
+            target = <lib.ma_node*>&(<HPFNode>target_node)._node
+        elif isinstance(target_node, BPFNode):
+            target = <lib.ma_node*>&(<BPFNode>target_node)._node
+        elif isinstance(target_node, DelayNode):
+            target = <lib.ma_node*>&(<DelayNode>target_node)._node
+        else:
+            raise TypeError("Unsupported target node type")
+
+        cdef lib.ma_result result = lib.ma_node_attach_output_bus(
+            <lib.ma_node*>&self._node, output_bus, target, target_input_bus
+        )
+        _check_result(result)
+
+    def detach_output(self, int output_bus):
+        """Detach an output bus."""
+        if not self._initialized:
+            raise MinimaError("BPF node not initialized")
+        lib.ma_node_detach_output_bus(<lib.ma_node*>&self._node, output_bus)
+
+    @property
+    def state(self) -> int:
+        """Get the node state."""
+        if not self._initialized:
+            raise MinimaError("BPF node not initialized")
+        return lib.ma_node_get_state(<lib.ma_node*>&self._node)
+
+    @state.setter
+    def state(self, int value):
+        """Set the node state."""
+        if not self._initialized:
+            raise MinimaError("BPF node not initialized")
+        lib.ma_node_set_state(<lib.ma_node*>&self._node, <lib.ma_node_state>value)
+
+
+cdef class DelayNode:
+    """
+    Delay effect node for the node graph.
+
+    Example:
+        delay = DelayNode(graph, delay_ms=250.0, decay=0.5)
+    """
+    cdef lib.ma_delay_node _node
+    cdef bint _initialized
+    cdef NodeGraph _graph
+    cdef lib.ma_uint32 _channels
+    cdef lib.ma_uint32 _sample_rate
+
+    def __cinit__(self):
+        self._initialized = False
+        self._graph = None
+
+    def __init__(self, NodeGraph graph not None, double delay_ms=250.0, float decay=0.5,
+                 int channels=2, int sample_rate=48000):
+        """
+        Initialize a delay node.
+
+        Args:
+            graph: The NodeGraph to add this node to
+            delay_ms: Delay time in milliseconds
+            decay: Feedback decay (0.0 to 1.0)
+            channels: Number of channels
+            sample_rate: Sample rate in Hz
+        """
+        if not graph._initialized:
+            raise MinimaError("Node graph not initialized")
+
+        cdef lib.ma_delay_node_config config
+        cdef lib.ma_result result
+        cdef lib.ma_uint32 delay_frames = <lib.ma_uint32>(delay_ms * sample_rate / 1000.0)
+
+        config = lib.ma_delay_node_config_init(channels, sample_rate, delay_frames, decay)
+
+        result = lib.ma_delay_node_init(graph._get_graph(), &config, NULL, &self._node)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize delay node (error {result})")
+
+        self._initialized = True
+        self._graph = graph
+        self._channels = channels
+        self._sample_rate = sample_rate
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_delay_node_uninit(&self._node, NULL)
+            self._initialized = False
+
+    @property
+    def wet(self) -> float:
+        """Get the wet signal level."""
+        if not self._initialized:
+            raise MinimaError("Delay node not initialized")
+        return lib.ma_delay_node_get_wet(&self._node)
+
+    @wet.setter
+    def wet(self, float value):
+        """Set the wet signal level."""
+        if not self._initialized:
+            raise MinimaError("Delay node not initialized")
+        lib.ma_delay_node_set_wet(&self._node, value)
+
+    @property
+    def dry(self) -> float:
+        """Get the dry signal level."""
+        if not self._initialized:
+            raise MinimaError("Delay node not initialized")
+        return lib.ma_delay_node_get_dry(&self._node)
+
+    @dry.setter
+    def dry(self, float value):
+        """Set the dry signal level."""
+        if not self._initialized:
+            raise MinimaError("Delay node not initialized")
+        lib.ma_delay_node_set_dry(&self._node, value)
+
+    @property
+    def decay(self) -> float:
+        """Get the feedback decay."""
+        if not self._initialized:
+            raise MinimaError("Delay node not initialized")
+        return lib.ma_delay_node_get_decay(&self._node)
+
+    @decay.setter
+    def decay(self, float value):
+        """Set the feedback decay."""
+        if not self._initialized:
+            raise MinimaError("Delay node not initialized")
+        lib.ma_delay_node_set_decay(&self._node, value)
+
+    def attach_output(self, int output_bus, object target_node, int target_input_bus):
+        """Attach output to another node."""
+        if not self._initialized:
+            raise MinimaError("Delay node not initialized")
+
+        cdef lib.ma_node* target
+        if isinstance(target_node, SplitterNode):
+            target = <lib.ma_node*>&(<SplitterNode>target_node)._node
+        elif isinstance(target_node, LPFNode):
+            target = <lib.ma_node*>&(<LPFNode>target_node)._node
+        elif isinstance(target_node, HPFNode):
+            target = <lib.ma_node*>&(<HPFNode>target_node)._node
+        elif isinstance(target_node, BPFNode):
+            target = <lib.ma_node*>&(<BPFNode>target_node)._node
+        elif isinstance(target_node, DelayNode):
+            target = <lib.ma_node*>&(<DelayNode>target_node)._node
+        else:
+            raise TypeError("Unsupported target node type")
+
+        cdef lib.ma_result result = lib.ma_node_attach_output_bus(
+            <lib.ma_node*>&self._node, output_bus, target, target_input_bus
+        )
+        _check_result(result)
+
+    def detach_output(self, int output_bus):
+        """Detach an output bus."""
+        if not self._initialized:
+            raise MinimaError("Delay node not initialized")
+        lib.ma_node_detach_output_bus(<lib.ma_node*>&self._node, output_bus)
+
+    @property
+    def state(self) -> int:
+        """Get the node state."""
+        if not self._initialized:
+            raise MinimaError("Delay node not initialized")
+        return lib.ma_node_get_state(<lib.ma_node*>&self._node)
+
+    @state.setter
+    def state(self, int value):
+        """Set the node state."""
+        if not self._initialized:
+            raise MinimaError("Delay node not initialized")
+        lib.ma_node_set_state(<lib.ma_node*>&self._node, <lib.ma_node_state>value)
+
+
+# -----------------------------------------------------------------------------
+# Resource Manager
+# -----------------------------------------------------------------------------
+
+# Resource manager flags
+RESOURCE_MANAGER_FLAG_NON_BLOCKING = lib.MA_RESOURCE_MANAGER_FLAG_NON_BLOCKING
+RESOURCE_MANAGER_DATA_SOURCE_FLAG_STREAM = lib.MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_STREAM
+RESOURCE_MANAGER_DATA_SOURCE_FLAG_DECODE = lib.MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_DECODE
+RESOURCE_MANAGER_DATA_SOURCE_FLAG_ASYNC = lib.MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_ASYNC
+RESOURCE_MANAGER_DATA_SOURCE_FLAG_WAIT_INIT = lib.MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_WAIT_INIT
+
+
+cdef class ResourceManager:
+    """
+    Manages audio resource loading with optional async support.
+
+    The ResourceManager handles loading and caching of audio files,
+    with support for asynchronous loading and streaming.
+
+    Example:
+        rm = ResourceManager()
+        source = rm.load("music.mp3", stream=True)
+        # Use the source...
+        source.close()
+        rm.close()
+    """
+    cdef lib.ma_resource_manager _rm
+    cdef bint _initialized
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, int decoded_format=Format.F32,
+                 int decoded_channels=0, int decoded_sample_rate=0,
+                 int job_thread_count=1):
+        """
+        Initialize a resource manager.
+
+        Args:
+            decoded_format: Format for decoded audio (default: F32)
+            decoded_channels: Channels for decoded audio (0 = native)
+            decoded_sample_rate: Sample rate for decoded audio (0 = native)
+            job_thread_count: Number of job threads for async loading
+        """
+        cdef lib.ma_resource_manager_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_resource_manager_config_init()
+        config.decodedFormat = <lib.ma_format>decoded_format
+        config.decodedChannels = decoded_channels
+        config.decodedSampleRate = decoded_sample_rate
+        config.jobThreadCount = job_thread_count
+
+        result = lib.ma_resource_manager_init(&config, &self._rm)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize resource manager (error {result})")
+
+        self._initialized = True
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_resource_manager_uninit(&self._rm)
+            self._initialized = False
+
+    def close(self):
+        """Close the resource manager and release resources."""
+        if self._initialized:
+            lib.ma_resource_manager_uninit(&self._rm)
+            self._initialized = False
+
+    def load(self, str path, bint stream=False, bint decode=True,
+             bint async_load=False, bint wait_init=True) -> "ResourceDataSource":
+        """
+        Load an audio file as a data source.
+
+        Args:
+            path: Path to the audio file
+            stream: Stream from disk instead of loading to memory
+            decode: Decode to PCM (required for most uses)
+            async_load: Load asynchronously
+            wait_init: Wait for initialization to complete (if async)
+
+        Returns:
+            ResourceDataSource for the loaded audio
+        """
+        if not self._initialized:
+            raise MinimaError("Resource manager not initialized")
+
+        cdef lib.ma_uint32 flags = 0
+        if stream:
+            flags |= lib.MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_STREAM
+        if decode:
+            flags |= lib.MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_DECODE
+        if async_load:
+            flags |= lib.MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_ASYNC
+        if wait_init:
+            flags |= lib.MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_WAIT_INIT
+
+        return ResourceDataSource(self, path, flags)
+
+    def register_file(self, str path, bint stream=False, bint decode=True):
+        """
+        Pre-register a file for later loading.
+
+        Args:
+            path: Path to the audio file
+            stream: Stream from disk
+            decode: Decode to PCM
+        """
+        if not self._initialized:
+            raise MinimaError("Resource manager not initialized")
+
+        cdef lib.ma_uint32 flags = 0
+        if stream:
+            flags |= lib.MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_STREAM
+        if decode:
+            flags |= lib.MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_DECODE
+
+        cdef bytes path_bytes = path.encode('utf-8')
+        cdef lib.ma_result result = lib.ma_resource_manager_register_file(&self._rm, path_bytes, flags)
+        _check_result(result)
+
+    def unregister_file(self, str path):
+        """Unregister a previously registered file."""
+        if not self._initialized:
+            raise MinimaError("Resource manager not initialized")
+
+        cdef bytes path_bytes = path.encode('utf-8')
+        cdef lib.ma_result result = lib.ma_resource_manager_unregister_file(&self._rm, path_bytes)
+        _check_result(result)
+
+    cdef lib.ma_resource_manager* _get_rm(self):
+        """Get the internal resource manager pointer."""
+        return &self._rm
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
+
+cdef class ResourceDataSource:
+    """
+    Audio data source loaded through the ResourceManager.
+
+    Provides access to loaded or streamed audio data.
+
+    Example:
+        rm = ResourceManager()
+        source = rm.load("music.mp3")
+        data = source.read(1024)
+        print(f"Length: {source.length} frames")
+    """
+    cdef lib.ma_resource_manager_data_source _source
+    cdef bint _initialized
+    cdef ResourceManager _rm
+    cdef str _path
+
+    def __cinit__(self):
+        self._initialized = False
+        self._rm = None
+
+    def __init__(self, ResourceManager rm not None, str path, lib.ma_uint32 flags):
+        """
+        Initialize a resource data source (internal use - use ResourceManager.load()).
+        """
+        if not rm._initialized:
+            raise MinimaError("Resource manager not initialized")
+
+        cdef bytes path_bytes = path.encode('utf-8')
+        cdef lib.ma_result result
+
+        result = lib.ma_resource_manager_data_source_init(
+            rm._get_rm(), path_bytes, flags, NULL, &self._source
+        )
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to load '{path}' (error {result})")
+
+        self._initialized = True
+        self._rm = rm
+        self._path = path
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_resource_manager_data_source_uninit(&self._source)
+            self._initialized = False
+
+    def close(self):
+        """Close the data source and release resources."""
+        if self._initialized:
+            lib.ma_resource_manager_data_source_uninit(&self._source)
+            self._initialized = False
+
+    @property
+    def path(self) -> str:
+        """Get the file path."""
+        return self._path
+
+    @property
+    def length(self) -> int:
+        """Get the total length in PCM frames."""
+        if not self._initialized:
+            raise MinimaError("Data source not initialized")
+        cdef lib.ma_uint64 length
+        cdef lib.ma_result result = lib.ma_resource_manager_data_source_get_length_in_pcm_frames(&self._source, &length)
+        if result != lib.MA_SUCCESS:
+            return 0
+        return length
+
+    @property
+    def cursor(self) -> int:
+        """Get the current position in PCM frames."""
+        if not self._initialized:
+            raise MinimaError("Data source not initialized")
+        cdef lib.ma_uint64 cursor
+        cdef lib.ma_result result = lib.ma_resource_manager_data_source_get_cursor_in_pcm_frames(&self._source, &cursor)
+        if result != lib.MA_SUCCESS:
+            return 0
+        return cursor
+
+    @property
+    def is_looping(self) -> bool:
+        """Check if the source is set to loop."""
+        if not self._initialized:
+            raise MinimaError("Data source not initialized")
+        return bool(lib.ma_resource_manager_data_source_is_looping(&self._source))
+
+    @is_looping.setter
+    def is_looping(self, bint value):
+        """Set whether the source loops."""
+        if not self._initialized:
+            raise MinimaError("Data source not initialized")
+        lib.ma_resource_manager_data_source_set_looping(&self._source, value)
+
+    def seek(self, lib.ma_uint64 frame):
+        """Seek to a specific PCM frame."""
+        if not self._initialized:
+            raise MinimaError("Data source not initialized")
+        cdef lib.ma_result result
+        with nogil:
+            result = lib.ma_resource_manager_data_source_seek_to_pcm_frame(&self._source, frame)
+        _check_result(result)
+
+    def read(self, lib.ma_uint64 frame_count) -> bytes:
+        """
+        Read PCM frames from the data source.
+
+        Args:
+            frame_count: Number of frames to read
+
+        Returns:
+            PCM data (float32)
+        """
+        if not self._initialized:
+            raise MinimaError("Data source not initialized")
+
+        # Get format info
+        cdef lib.ma_format format_out
+        cdef lib.ma_uint32 channels
+        cdef lib.ma_uint32 sample_rate
+        lib.ma_resource_manager_data_source_get_data_format(&self._source, &format_out, &channels, &sample_rate, NULL, 0)
+
+        cdef int bytes_per_sample
+        if format_out == lib.ma_format_u8:
+            bytes_per_sample = 1
+        elif format_out == lib.ma_format_s16:
+            bytes_per_sample = 2
+        elif format_out == lib.ma_format_s24:
+            bytes_per_sample = 3
+        else:
+            bytes_per_sample = 4
+
+        cdef lib.ma_uint64 frames_read
+        cdef size_t buffer_size = frame_count * channels * bytes_per_sample
+        cdef void* buffer = malloc(buffer_size)
+
+        if buffer == NULL:
+            raise MemoryError("Failed to allocate buffer")
+
+        try:
+            with nogil:
+                lib.ma_resource_manager_data_source_read_pcm_frames(&self._source, buffer, frame_count, &frames_read)
+            return bytes((<char*>buffer)[:frames_read * channels * bytes_per_sample])
+        finally:
+            free(buffer)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
+    def __repr__(self):
+        return f"ResourceDataSource({self._path!r})"
 
 
 # -----------------------------------------------------------------------------

@@ -29,8 +29,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Encoder` - Audio file encoder for recording (WAV format)
 - `EncodingFormat` enum
 
+#### Node Graph
+- `NodeGraph` - Audio processing graph container with channel configuration and time control
+- `SplitterNode` - Splits audio to multiple output buses with per-bus volume control
+- `LPFNode` - Low-pass filter node for the node graph
+- `HPFNode` - High-pass filter node for the node graph
+- `BPFNode` - Band-pass filter node for the node graph
+- `DelayNode` - Delay effect node with wet/dry/decay control
+- `NodeState` enum for node state management (STARTED, STOPPED)
+
+#### Resource Manager
+- `ResourceManager` - Manages async audio resource loading and caching
+  - Configurable decoded format, channels, and sample rate
+  - Job thread pool for async operations
+  - File registration for preloading
+- `ResourceDataSource` - Data source for audio loaded through ResourceManager
+  - Read, seek, and cursor position
+  - Length queries
+  - Looping control
+- Resource manager flags:
+  - `RESOURCE_MANAGER_FLAG_NON_BLOCKING`
+  - `RESOURCE_MANAGER_DATA_SOURCE_FLAG_STREAM`
+  - `RESOURCE_MANAGER_DATA_SOURCE_FLAG_DECODE`
+  - `RESOURCE_MANAGER_DATA_SOURCE_FLAG_ASYNC`
+  - `RESOURCE_MANAGER_DATA_SOURCE_FLAG_WAIT_INIT`
+
+#### Development Tooling
+- Added `ruff` for linting and formatting
+  - Configured with pycodestyle, Pyflakes, isort, flake8-bugbear, flake8-comprehensions, pyupgrade, flake8-simplify rules
+- Added `mypy` for static type checking
+- New Makefile targets:
+  - `lint` - Check code with ruff
+  - `format` - Format code with ruff
+  - `typecheck` - Type check with mypy
+  - `dist` - Build both wheel and sdist
+  - `check` - Validate distributions with twine
+  - `publish-test` - Upload to TestPyPI
+  - `publish` - Upload to PyPI
+
+#### Package Metadata
+- Added full PyPI metadata to `pyproject.toml`:
+  - README, license, authors, maintainers
+  - Keywords for discoverability
+  - Classifiers for Python versions, OS, topics
+  - Project URLs (homepage, docs, issues, changelog)
+  - Source distribution include/exclude rules
+
 #### Tests
-- Added 19 new tests for filters, delay, ring buffers, and encoder
+- 17 new tests for node graph (NodeGraph, SplitterNode, LPFNode, HPFNode, BPFNode, DelayNode)
+- 6 new tests for resource manager (ResourceManager, ResourceDataSource)
+- 8 new tests for filters
+- 3 new tests for delay effect
+- 5 new tests for ring buffers
+- 3 new tests for encoder
+- Total test count: 68 tests (65 passing, 3 interactive skipped)
+
+### Changed
+
+#### Performance: GIL Release for Audio Operations
+- Added `nogil` blocks to release the Python GIL during I/O and DSP operations
+- Enables other Python threads to run during audio processing (critical for real-time applications)
+- Methods that now release the GIL:
+  - `Waveform.seek()`, `Waveform.read()`
+  - `Noise.read()`
+  - `Decoder.seek()`, `Decoder.read()`
+  - `Encoder.write()`
+  - `NodeGraph.read()`
+  - `ResourceDataSource.seek()`, `ResourceDataSource.read()`
+  - All filter `process()` methods (LowPassFilter, HighPassFilter, BandPassFilter, NotchFilter, PeakFilter, LowShelfFilter, HighShelfFilter)
+  - `Delay.process()`
 
 ## [0.1.0] - 2026-01-23
 
@@ -40,6 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Migrated from `setup.py` to modern Python packaging with `scikit-build-core` and CMake
 - Added `uv` as the package manager with `pyproject.toml` configuration
 - New `Makefile` with targets: `sync`, `build`, `test`, `wheel`, `sdist`, `clean`
+- CMake-based build with platform-specific audio backend linking
 
 #### Core Classes
 - `Engine` - High-level audio engine for sound playback
@@ -113,7 +181,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SOUND_FLAG_NO_SPATIALIZATION` - Disable 3D audio
 
 #### Tests
-- Comprehensive test suite with 32 tests covering all new functionality
+- Initial test suite with 26 tests covering core functionality
 - Tests for version, enums, devices, engine, sound, decoder, waveform, noise, and exceptions
 
 ### Changed

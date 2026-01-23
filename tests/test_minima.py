@@ -1,9 +1,10 @@
 """Tests for minima audio library."""
 
 import pytest
+
 import minima
 
-SOUNDFILE = 'tests/beat.wav'
+SOUNDFILE = "tests/beat.wav"
 
 
 class TestVersion:
@@ -14,7 +15,7 @@ class TestVersion:
         version = minima.get_version()
         assert version
         assert isinstance(version, str)
-        assert '.' in version
+        assert "." in version
 
     def test_get_version_numbers(self):
         """Test that version numbers are returned as tuple."""
@@ -54,19 +55,19 @@ class TestDevices:
     def test_list_devices(self):
         """Test listing available devices."""
         devices = minima.list_devices()
-        assert 'playback' in devices
-        assert 'capture' in devices
-        assert isinstance(devices['playback'], list)
-        assert isinstance(devices['capture'], list)
+        assert "playback" in devices
+        assert "capture" in devices
+        assert isinstance(devices["playback"], list)
+        assert isinstance(devices["capture"], list)
 
     def test_device_info(self):
         """Test DeviceInfo objects."""
         devices = minima.list_devices()
-        if devices['playback']:
-            dev = devices['playback'][0]
-            assert hasattr(dev, 'name')
-            assert hasattr(dev, 'is_default')
-            assert hasattr(dev, 'device_type')
+        if devices["playback"]:
+            dev = devices["playback"][0]
+            assert hasattr(dev, "name")
+            assert hasattr(dev, "is_default")
+            assert hasattr(dev, "device_type")
             assert isinstance(dev.name, str)
 
     def test_get_default_device(self):
@@ -119,41 +120,36 @@ class TestSound:
 
     def test_sound_context_manager(self):
         """Test sound as context manager."""
-        with minima.Engine() as engine:
-            with minima.Sound(engine, SOUNDFILE) as sound:
-                assert sound.path == SOUNDFILE
+        with minima.Engine() as engine, minima.Sound(engine, SOUNDFILE) as sound:
+            assert sound.path == SOUNDFILE
 
     def test_sound_properties(self):
         """Test sound property access."""
-        with minima.Engine() as engine:
-            with minima.Sound(engine, SOUNDFILE) as sound:
-                # Test readable properties
-                assert sound.volume >= 0
-                assert sound.pan >= -1 and sound.pan <= 1
-                assert sound.pitch > 0
-                assert not sound.looping
-                assert sound.length > 0
+        with minima.Engine() as engine, minima.Sound(engine, SOUNDFILE) as sound:
+            # Test readable properties
+            assert sound.volume >= 0
+            assert sound.pan >= -1 and sound.pan <= 1
+            assert sound.pitch > 0
+            assert not sound.looping
+            assert sound.length > 0
 
     def test_sound_volume(self):
         """Test sound volume control."""
-        with minima.Engine() as engine:
-            with minima.Sound(engine, SOUNDFILE) as sound:
-                sound.volume = 0.5
-                assert abs(sound.volume - 0.5) < 0.01
+        with minima.Engine() as engine, minima.Sound(engine, SOUNDFILE) as sound:
+            sound.volume = 0.5
+            assert abs(sound.volume - 0.5) < 0.01
 
     def test_sound_looping(self):
         """Test sound looping control."""
-        with minima.Engine() as engine:
-            with minima.Sound(engine, SOUNDFILE) as sound:
-                assert not sound.looping
-                sound.looping = True
-                assert sound.looping
+        with minima.Engine() as engine, minima.Sound(engine, SOUNDFILE) as sound:
+            assert not sound.looping
+            sound.looping = True
+            assert sound.looping
 
     def test_sound_invalid_file(self):
         """Test loading invalid file raises error."""
-        with minima.Engine() as engine:
-            with pytest.raises(minima.SoundError):
-                minima.Sound(engine, "nonexistent.wav")
+        with minima.Engine() as engine, pytest.raises(minima.SoundError):
+            minima.Sound(engine, "nonexistent.wav")
 
 
 class TestDecoder:
@@ -203,9 +199,7 @@ class TestWaveform:
     def test_waveform_init(self):
         """Test waveform initialization."""
         waveform = minima.Waveform(
-            waveform_type=minima.WaveformType.SINE,
-            amplitude=0.5,
-            frequency=440.0
+            waveform_type=minima.WaveformType.SINE, amplitude=0.5, frequency=440.0
         )
         assert waveform.amplitude == 0.5
         assert waveform.frequency == 440.0
@@ -221,8 +215,12 @@ class TestWaveform:
 
     def test_waveform_types(self):
         """Test different waveform types."""
-        for wtype in [minima.WaveformType.SINE, minima.WaveformType.SQUARE,
-                      minima.WaveformType.TRIANGLE, minima.WaveformType.SAWTOOTH]:
+        for wtype in [
+            minima.WaveformType.SINE,
+            minima.WaveformType.SQUARE,
+            minima.WaveformType.TRIANGLE,
+            minima.WaveformType.SAWTOOTH,
+        ]:
             waveform = minima.Waveform(waveform_type=wtype)
             assert waveform.waveform_type == wtype
 
@@ -252,8 +250,7 @@ class TestNoise:
 
     def test_noise_types(self):
         """Test different noise types."""
-        for ntype in [minima.NoiseType.WHITE, minima.NoiseType.PINK,
-                      minima.NoiseType.BROWNIAN]:
+        for ntype in [minima.NoiseType.WHITE, minima.NoiseType.PINK, minima.NoiseType.BROWNIAN]:
             noise = minima.Noise(noise_type=ntype)
             assert noise.noise_type == ntype
 
@@ -377,7 +374,7 @@ class TestRingBuffers:
     def test_ring_buffer_write_read(self):
         """Test ring buffer write and read."""
         rb = minima.RingBuffer(buffer_size=4096)
-        data = b'Hello, World!'
+        data = b"Hello, World!"
         written = rb.write(data)
         assert written == len(data)
         assert rb.available_read == len(data)
@@ -388,7 +385,7 @@ class TestRingBuffers:
     def test_ring_buffer_reset(self):
         """Test ring buffer reset."""
         rb = minima.RingBuffer(buffer_size=4096)
-        rb.write(b'test data')
+        rb.write(b"test data")
         rb.reset()
         assert rb.available_read == 0
 
@@ -416,10 +413,10 @@ class TestEncoder:
 
     def test_encoder_init(self):
         """Test encoder initialization."""
-        import tempfile
         import os
+        import tempfile
 
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             path = f.name
 
         try:
@@ -433,10 +430,10 @@ class TestEncoder:
 
     def test_encoder_write(self):
         """Test encoder writing."""
-        import tempfile
         import os
+        import tempfile
 
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             path = f.name
 
         try:
@@ -455,10 +452,10 @@ class TestEncoder:
 
     def test_encoder_context_manager(self):
         """Test encoder as context manager."""
-        import tempfile
         import os
+        import tempfile
 
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             path = f.name
 
         try:
@@ -470,6 +467,125 @@ class TestEncoder:
         finally:
             if os.path.exists(path):
                 os.unlink(path)
+
+
+class TestNodeGraph:
+    """Test node graph classes."""
+
+    def test_node_graph_init(self):
+        """Test node graph initialization."""
+        graph = minima.NodeGraph(channels=2)
+        assert graph.channels == 2
+        graph.close()
+
+    def test_node_graph_context_manager(self):
+        """Test node graph as context manager."""
+        with minima.NodeGraph(channels=2) as graph:
+            assert graph.channels == 2
+
+    def test_node_graph_time(self):
+        """Test node graph time property."""
+        with minima.NodeGraph(channels=2) as graph:
+            assert graph.time == 0
+            graph.time = 1000
+            assert graph.time == 1000
+
+    def test_node_graph_read(self):
+        """Test reading from node graph."""
+        with minima.NodeGraph(channels=2) as graph:
+            # Read some frames (will be silence without connected sources)
+            data = graph.read(1024)
+            assert isinstance(data, bytes)
+
+    def test_splitter_node_init(self):
+        """Test splitter node initialization."""
+        with minima.NodeGraph(channels=2) as graph:
+            splitter = minima.SplitterNode(graph, channels=2, output_bus_count=2)
+            assert splitter.state == minima.NodeState.STARTED
+
+    def test_splitter_node_volume(self):
+        """Test splitter node volume control."""
+        with minima.NodeGraph(channels=2) as graph:
+            splitter = minima.SplitterNode(graph, channels=2, output_bus_count=2)
+            splitter.set_output_volume(0, 0.5)
+            assert abs(splitter.get_output_volume(0) - 0.5) < 0.01
+
+    def test_lpf_node_init(self):
+        """Test LPF node initialization."""
+        with minima.NodeGraph(channels=2) as graph:
+            lpf = minima.LPFNode(graph, cutoff=1000.0, order=2)
+            assert lpf.state == minima.NodeState.STARTED
+
+    def test_hpf_node_init(self):
+        """Test HPF node initialization."""
+        with minima.NodeGraph(channels=2) as graph:
+            hpf = minima.HPFNode(graph, cutoff=200.0, order=2)
+            assert hpf.state == minima.NodeState.STARTED
+
+    def test_bpf_node_init(self):
+        """Test BPF node initialization."""
+        with minima.NodeGraph(channels=2) as graph:
+            bpf = minima.BPFNode(graph, cutoff=1000.0, order=2)
+            assert bpf.state == minima.NodeState.STARTED
+
+    def test_delay_node_init(self):
+        """Test delay node initialization."""
+        with minima.NodeGraph(channels=2) as graph:
+            delay = minima.DelayNode(graph, delay_ms=250.0, decay=0.5)
+            assert delay.state == minima.NodeState.STARTED
+
+    def test_delay_node_properties(self):
+        """Test delay node property setters."""
+        with minima.NodeGraph(channels=2) as graph:
+            delay = minima.DelayNode(graph, delay_ms=250.0)
+            delay.wet = 0.7
+            delay.dry = 0.8
+            delay.decay = 0.4
+            assert abs(delay.wet - 0.7) < 0.01
+            assert abs(delay.dry - 0.8) < 0.01
+            assert abs(delay.decay - 0.4) < 0.01
+
+
+class TestResourceManager:
+    """Test resource manager classes."""
+
+    def test_resource_manager_init(self):
+        """Test resource manager initialization."""
+        rm = minima.ResourceManager()
+        rm.close()
+
+    def test_resource_manager_context_manager(self):
+        """Test resource manager as context manager."""
+        with minima.ResourceManager():
+            pass
+
+    def test_resource_manager_load(self):
+        """Test loading audio through resource manager."""
+        with minima.ResourceManager() as rm:
+            source = rm.load(SOUNDFILE)
+            assert source.path == SOUNDFILE
+            assert source.length > 0
+            source.close()
+
+    def test_resource_data_source_read(self):
+        """Test reading from resource data source."""
+        with minima.ResourceManager() as rm, rm.load(SOUNDFILE) as source:
+            data = source.read(1024)
+            assert len(data) > 0
+            assert isinstance(data, bytes)
+
+    def test_resource_data_source_seek(self):
+        """Test seeking in resource data source."""
+        with minima.ResourceManager() as rm, rm.load(SOUNDFILE) as source:
+            source.seek(0)
+            assert source.cursor == 0
+
+    def test_resource_data_source_looping(self):
+        """Test looping property of resource data source."""
+        with minima.ResourceManager() as rm, rm.load(SOUNDFILE) as source:
+            assert not source.is_looping
+            source.is_looping = True
+            assert source.is_looping
 
 
 # Interactive tests - require user input, skip in automated runs
@@ -488,14 +604,14 @@ def test_engine_play_file():
     minima.engine_play_file(SOUNDFILE)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     version = minima.get_version()
     print(f"minima {minima.__version__}: miniaudio {version}\n")
 
     # Run a quick smoke test
     print("Listing devices...")
     devices = minima.list_devices()
-    for dev in devices['playback']:
+    for dev in devices["playback"]:
         print(f"  {dev}")
 
     print("\nTesting engine...")

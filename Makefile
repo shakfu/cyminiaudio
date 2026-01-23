@@ -4,7 +4,7 @@
 # This Makefile wraps common build commands for convenience.
 # The actual build is handled by scikit-build-core via pyproject.toml
 
-.PHONY: all sync build rebuild test clean distclean wheel sdist help
+.PHONY: all sync build rebuild test lint format typecheck clean distclean wheel sdist dist check publish-test publish help
 
 # Default target
 all: build
@@ -24,6 +24,19 @@ rebuild: build
 test:
 	uv run pytest tests/ -v
 
+# Lint with ruff
+lint:
+	uv run ruff check src/ tests/
+
+# Format with ruff
+format:
+	uv run ruff format src/ tests/
+	uv run ruff check --fix src/ tests/
+
+# Type check with mypy
+typecheck:
+	uv run mypy src/minima/__init__.py tests/ --exclude '.venv'
+
 # Build wheel
 wheel:
 	uv build --wheel
@@ -31,6 +44,21 @@ wheel:
 # Build source distribution
 sdist:
 	uv build --sdist
+
+# Build both wheel and sdist
+dist: wheel sdist
+
+# Check distributions with twine
+check:
+	uv run twine check dist/*
+
+# Publish to TestPyPI
+publish-test: dist check
+	uv run twine upload --repository testpypi dist/*
+
+# Publish to PyPI
+publish: dist check
+	uv run twine upload dist/*
 
 # Clean build artifacts
 clean:
@@ -50,13 +78,20 @@ distclean: clean
 # Show help
 help:
 	@echo "Available targets:"
-	@echo "  all       - Build/rebuild the extension (default)"
-	@echo "  sync      - Sync environment (initial setup)"
-	@echo "  build     - Rebuild extension after code changes"
-	@echo "  rebuild   - Alias for build"
-	@echo "  test      - Run tests"
-	@echo "  wheel     - Build wheel distribution"
-	@echo "  sdist     - Build source distribution"
-	@echo "  clean     - Remove build artifacts"
-	@echo "  distclean - Remove all generated files"
-	@echo "  help      - Show this help message"
+	@echo "  all          - Build/rebuild the extension (default)"
+	@echo "  sync         - Sync environment (initial setup)"
+	@echo "  build        - Rebuild extension after code changes"
+	@echo "  rebuild      - Alias for build"
+	@echo "  test         - Run tests"
+	@echo "  lint         - Lint with ruff"
+	@echo "  format       - Format with ruff"
+	@echo "  typecheck    - Type check with mypy"
+	@echo "  wheel        - Build wheel distribution"
+	@echo "  sdist        - Build source distribution"
+	@echo "  dist         - Build both wheel and sdist"
+	@echo "  check        - Check distributions with twine"
+	@echo "  publish-test - Publish to TestPyPI"
+	@echo "  publish      - Publish to PyPI"
+	@echo "  clean        - Remove build artifacts"
+	@echo "  distclean    - Remove all generated files"
+	@echo "  help         - Show this help message"

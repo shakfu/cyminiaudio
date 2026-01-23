@@ -1,18 +1,128 @@
-[build-system]
-requires = ["scikit-build-core>=0.10", "cython>=3.0"]
-build-backend = "scikit_build_core.build"
-
 [project]
 name = "minima"
 version = "0.1.0"
 description = "Minimal Python bindings for miniaudio"
+readme = "README.md"
+license = "Unlicense"
 requires-python = ">=3.9"
+authors = [
+    { name = "Your Name", email = "your.email@example.com" }
+]
+maintainers = [
+    { name = "Your Name", email = "your.email@example.com" }
+]
+keywords = [
+    "audio",
+    "sound",
+    "miniaudio",
+    "playback",
+    "recording",
+    "waveform",
+    "filters",
+    "dsp",
+    "real-time",
+    "cross-platform",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Cython",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+    "Topic :: Multimedia :: Sound/Audio :: Players",
+    "Topic :: Multimedia :: Sound/Audio :: Sound Synthesis",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/minima"
+Documentation = "https://github.com/yourusername/minima#readme"
+Repository = "https://github.com/yourusername/minima.git"
+Issues = "https://github.com/yourusername/minima/issues"
+Changelog = "https://github.com/yourusername/minima/blob/main/CHANGELOG.md"
+
+[build-system]
+requires = ["scikit-build-core>=0.10", "cython>=3.0"]
+build-backend = "scikit_build_core.build"
 
 [tool.scikit-build]
 wheel.packages = ["src/minima"]
+cmake.version = ">=3.15"
+cmake.build-type = "Release"
+sdist.include = [
+    "src/",
+    "miniaudio/",
+    "CMakeLists.txt",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+]
+sdist.exclude = [
+    ".git/",
+    ".venv/",
+    "__pycache__/",
+    "*.pyc",
+    ".pytest_cache/",
+    "build/",
+    "dist/",
+    "*.egg-info/",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = [
+    "pytest>=8.0",
+    "build>=1.0",
+    "twine>=5.0",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "SIM",    # flake8-simplify
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # do not perform function calls in argument defaults
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["minima"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+exclude = [
+    "^.venv/",
+    "^build/",
+    "^dist/",
+]
