@@ -6,7 +6,9 @@ A Python audio library providing:
 - Sound objects with full parameter control
 - Device enumeration
 - Waveform and noise generation
-- Audio decoding
+- Audio decoding and encoding
+- Audio filters and effects
+- Ring buffers for real-time audio
 
 Example:
     import minima
@@ -19,6 +21,10 @@ Example:
     # Device info
     devices = minima.list_devices()
     print(devices['playback'])
+
+    # Audio processing
+    lpf = minima.LowPassFilter(cutoff=1000.0)
+    filtered = lpf.process(audio_data)
 """
 
 from minima._core import (
@@ -39,6 +45,7 @@ from minima._core import (
     WaveformType,
     NoiseType,
     AttenuationModel,
+    EncodingFormat,
 
     # Device enumeration
     DeviceInfo,
@@ -49,8 +56,25 @@ from minima._core import (
     Engine,
     Sound,
     Decoder,
+    Encoder,
     Waveform,
     Noise,
+
+    # Filters
+    LowPassFilter,
+    HighPassFilter,
+    BandPassFilter,
+    NotchFilter,
+    PeakFilter,
+    LowShelfFilter,
+    HighShelfFilter,
+
+    # Effects
+    Delay,
+
+    # Ring buffers
+    RingBuffer,
+    PCMRingBuffer,
 
     # Sound flags
     SOUND_FLAG_STREAM,
@@ -83,6 +107,7 @@ __all__ = [
     "WaveformType",
     "NoiseType",
     "AttenuationModel",
+    "EncodingFormat",
 
     # Device enumeration
     "DeviceInfo",
@@ -93,8 +118,25 @@ __all__ = [
     "Engine",
     "Sound",
     "Decoder",
+    "Encoder",
     "Waveform",
     "Noise",
+
+    # Filters
+    "LowPassFilter",
+    "HighPassFilter",
+    "BandPassFilter",
+    "NotchFilter",
+    "PeakFilter",
+    "LowShelfFilter",
+    "HighShelfFilter",
+
+    # Effects
+    "Delay",
+
+    # Ring buffers
+    "RingBuffer",
+    "PCMRingBuffer",
 
     # Sound flags
     "SOUND_FLAG_STREAM",

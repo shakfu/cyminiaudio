@@ -16,7 +16,7 @@ from typing import Optional, List, Tuple
 
 cimport libminiaudio as lib
 from libc.stdlib cimport malloc, free
-from libc.string cimport memset
+from libc.string cimport memset, memcpy
 
 # Build configuration
 DEF MA_NO_DECODING = 0
@@ -1344,6 +1344,1152 @@ cdef class Decoder:
 
     def __repr__(self):
         return f"Decoder({self._path!r}, {self.channels}ch, {self.sample_rate}Hz)"
+
+
+# -----------------------------------------------------------------------------
+# Filters
+# -----------------------------------------------------------------------------
+
+cdef class LowPassFilter:
+    """
+    Low-pass filter that attenuates frequencies above the cutoff.
+
+    Example:
+        lpf = LowPassFilter(cutoff=1000.0, order=2)
+        output = lpf.process(input_data)
+    """
+    cdef lib.ma_lpf _filter
+    cdef bint _initialized
+    cdef lib.ma_uint32 _channels
+    cdef lib.ma_uint32 _sample_rate
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, double cutoff, int order=2,
+                 int channels=2, int sample_rate=48000,
+                 int format=Format.F32):
+        """
+        Initialize a low-pass filter.
+
+        Args:
+            cutoff: Cutoff frequency in Hz
+            order: Filter order (1-8, higher = steeper rolloff)
+            channels: Number of channels
+            sample_rate: Sample rate in Hz
+            format: Sample format
+        """
+        cdef lib.ma_lpf_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_lpf_config_init(
+            <lib.ma_format>format,
+            channels,
+            sample_rate,
+            cutoff,
+            order
+        )
+
+        result = lib.ma_lpf_init(&config, NULL, &self._filter)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize low-pass filter (error {result})")
+
+        self._initialized = True
+        self._channels = channels
+        self._sample_rate = sample_rate
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_lpf_uninit(&self._filter, NULL)
+            self._initialized = False
+
+    def reinit(self, double cutoff, int order=2):
+        """Reinitialize the filter with new parameters."""
+        if not self._initialized:
+            raise MinimaError("Filter not initialized")
+        cdef lib.ma_lpf_config config = lib.ma_lpf_config_init(
+            self._filter.format,
+            self._channels,
+            self._sample_rate,
+            cutoff,
+            order
+        )
+        cdef lib.ma_result result = lib.ma_lpf_reinit(&config, &self._filter)
+        _check_result(result)
+
+    def process(self, bytes data) -> bytes:
+        """
+        Process audio data through the filter.
+
+        Args:
+            data: Input PCM data (float32)
+
+        Returns:
+            Filtered PCM data
+        """
+        if not self._initialized:
+            raise MinimaError("Filter not initialized")
+
+        cdef lib.ma_uint64 frame_count = len(data) // (self._channels * sizeof(float))
+        cdef float* output = <float*>malloc(len(data))
+
+        if output == NULL:
+            raise MemoryError("Failed to allocate buffer")
+
+        try:
+            lib.ma_lpf_process_pcm_frames(&self._filter, output, <float*><char*>data, frame_count)
+            return bytes((<char*>output)[:len(data)])
+        finally:
+            free(output)
+
+    @property
+    def latency(self) -> int:
+        """Get the filter latency in frames."""
+        if not self._initialized:
+            raise MinimaError("Filter not initialized")
+        return lib.ma_lpf_get_latency(&self._filter)
+
+
+cdef class HighPassFilter:
+    """
+    High-pass filter that attenuates frequencies below the cutoff.
+
+    Example:
+        hpf = HighPassFilter(cutoff=200.0, order=2)
+        output = hpf.process(input_data)
+    """
+    cdef lib.ma_hpf _filter
+    cdef bint _initialized
+    cdef lib.ma_uint32 _channels
+    cdef lib.ma_uint32 _sample_rate
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, double cutoff, int order=2,
+                 int channels=2, int sample_rate=48000,
+                 int format=Format.F32):
+        """
+        Initialize a high-pass filter.
+
+        Args:
+            cutoff: Cutoff frequency in Hz
+            order: Filter order (1-8, higher = steeper rolloff)
+            channels: Number of channels
+            sample_rate: Sample rate in Hz
+            format: Sample format
+        """
+        cdef lib.ma_hpf_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_hpf_config_init(
+            <lib.ma_format>format,
+            channels,
+            sample_rate,
+            cutoff,
+            order
+        )
+
+        result = lib.ma_hpf_init(&config, NULL, &self._filter)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize high-pass filter (error {result})")
+
+        self._initialized = True
+        self._channels = channels
+        self._sample_rate = sample_rate
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_hpf_uninit(&self._filter, NULL)
+            self._initialized = False
+
+    def reinit(self, double cutoff, int order=2):
+        """Reinitialize the filter with new parameters."""
+        if not self._initialized:
+            raise MinimaError("Filter not initialized")
+        cdef lib.ma_hpf_config config = lib.ma_hpf_config_init(
+            self._filter.format,
+            self._channels,
+            self._sample_rate,
+            cutoff,
+            order
+        )
+        cdef lib.ma_result result = lib.ma_hpf_reinit(&config, &self._filter)
+        _check_result(result)
+
+    def process(self, bytes data) -> bytes:
+        """Process audio data through the filter."""
+        if not self._initialized:
+            raise MinimaError("Filter not initialized")
+
+        cdef lib.ma_uint64 frame_count = len(data) // (self._channels * sizeof(float))
+        cdef float* output = <float*>malloc(len(data))
+
+        if output == NULL:
+            raise MemoryError("Failed to allocate buffer")
+
+        try:
+            lib.ma_hpf_process_pcm_frames(&self._filter, output, <float*><char*>data, frame_count)
+            return bytes((<char*>output)[:len(data)])
+        finally:
+            free(output)
+
+    @property
+    def latency(self) -> int:
+        """Get the filter latency in frames."""
+        if not self._initialized:
+            raise MinimaError("Filter not initialized")
+        return lib.ma_hpf_get_latency(&self._filter)
+
+
+cdef class BandPassFilter:
+    """
+    Band-pass filter that passes frequencies within a range.
+
+    Example:
+        bpf = BandPassFilter(cutoff=1000.0, order=2)
+        output = bpf.process(input_data)
+    """
+    cdef lib.ma_bpf _filter
+    cdef bint _initialized
+    cdef lib.ma_uint32 _channels
+    cdef lib.ma_uint32 _sample_rate
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, double cutoff, int order=2,
+                 int channels=2, int sample_rate=48000,
+                 int format=Format.F32):
+        """
+        Initialize a band-pass filter.
+
+        Args:
+            cutoff: Center frequency in Hz
+            order: Filter order (must be even, 2-8)
+            channels: Number of channels
+            sample_rate: Sample rate in Hz
+            format: Sample format
+        """
+        cdef lib.ma_bpf_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_bpf_config_init(
+            <lib.ma_format>format,
+            channels,
+            sample_rate,
+            cutoff,
+            order
+        )
+
+        result = lib.ma_bpf_init(&config, NULL, &self._filter)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize band-pass filter (error {result})")
+
+        self._initialized = True
+        self._channels = channels
+        self._sample_rate = sample_rate
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_bpf_uninit(&self._filter, NULL)
+            self._initialized = False
+
+    def reinit(self, double cutoff, int order=2):
+        """Reinitialize the filter with new parameters."""
+        if not self._initialized:
+            raise MinimaError("Filter not initialized")
+        cdef lib.ma_bpf_config config = lib.ma_bpf_config_init(
+            self._filter.format,
+            self._channels,
+            self._sample_rate,
+            cutoff,
+            order
+        )
+        cdef lib.ma_result result = lib.ma_bpf_reinit(&config, &self._filter)
+        _check_result(result)
+
+    def process(self, bytes data) -> bytes:
+        """Process audio data through the filter."""
+        if not self._initialized:
+            raise MinimaError("Filter not initialized")
+
+        cdef lib.ma_uint64 frame_count = len(data) // (self._channels * sizeof(float))
+        cdef float* output = <float*>malloc(len(data))
+
+        if output == NULL:
+            raise MemoryError("Failed to allocate buffer")
+
+        try:
+            lib.ma_bpf_process_pcm_frames(&self._filter, output, <float*><char*>data, frame_count)
+            return bytes((<char*>output)[:len(data)])
+        finally:
+            free(output)
+
+    @property
+    def latency(self) -> int:
+        """Get the filter latency in frames."""
+        if not self._initialized:
+            raise MinimaError("Filter not initialized")
+        return lib.ma_bpf_get_latency(&self._filter)
+
+
+cdef class NotchFilter:
+    """
+    Notch filter (band-reject) that attenuates a specific frequency.
+
+    Example:
+        notch = NotchFilter(frequency=60.0, q=10.0)  # Remove 60Hz hum
+        output = notch.process(input_data)
+    """
+    cdef lib.ma_notch2 _filter
+    cdef bint _initialized
+    cdef lib.ma_uint32 _channels
+    cdef lib.ma_uint32 _sample_rate
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, double frequency, double q=1.0,
+                 int channels=2, int sample_rate=48000,
+                 int format=Format.F32):
+        """
+        Initialize a notch filter.
+
+        Args:
+            frequency: Center frequency to attenuate in Hz
+            q: Q factor (higher = narrower notch)
+            channels: Number of channels
+            sample_rate: Sample rate in Hz
+            format: Sample format
+        """
+        cdef lib.ma_notch2_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_notch2_config_init(
+            <lib.ma_format>format,
+            channels,
+            sample_rate,
+            q,
+            frequency
+        )
+
+        result = lib.ma_notch2_init(&config, NULL, &self._filter)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize notch filter (error {result})")
+
+        self._initialized = True
+        self._channels = channels
+        self._sample_rate = sample_rate
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_notch2_uninit(&self._filter, NULL)
+            self._initialized = False
+
+    def reinit(self, double frequency, double q=1.0):
+        """Reinitialize the filter with new parameters."""
+        if not self._initialized:
+            raise MinimaError("Filter not initialized")
+        cdef lib.ma_notch2_config config = lib.ma_notch2_config_init(
+            lib.ma_format_f32,
+            self._channels,
+            self._sample_rate,
+            q,
+            frequency
+        )
+        cdef lib.ma_result result = lib.ma_notch2_reinit(&config, &self._filter)
+        _check_result(result)
+
+    def process(self, bytes data) -> bytes:
+        """Process audio data through the filter."""
+        if not self._initialized:
+            raise MinimaError("Filter not initialized")
+
+        cdef lib.ma_uint64 frame_count = len(data) // (self._channels * sizeof(float))
+        cdef float* output = <float*>malloc(len(data))
+
+        if output == NULL:
+            raise MemoryError("Failed to allocate buffer")
+
+        try:
+            lib.ma_notch2_process_pcm_frames(&self._filter, output, <float*><char*>data, frame_count)
+            return bytes((<char*>output)[:len(data)])
+        finally:
+            free(output)
+
+    @property
+    def latency(self) -> int:
+        """Get the filter latency in frames."""
+        if not self._initialized:
+            raise MinimaError("Filter not initialized")
+        return lib.ma_notch2_get_latency(&self._filter)
+
+
+cdef class PeakFilter:
+    """
+    Peaking EQ filter that boosts or cuts a specific frequency.
+
+    Example:
+        peak = PeakFilter(frequency=1000.0, gain_db=6.0, q=1.0)
+        output = peak.process(input_data)
+    """
+    cdef lib.ma_peak2 _filter
+    cdef bint _initialized
+    cdef lib.ma_uint32 _channels
+    cdef lib.ma_uint32 _sample_rate
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, double frequency, double gain_db=0.0, double q=1.0,
+                 int channels=2, int sample_rate=48000,
+                 int format=Format.F32):
+        """
+        Initialize a peaking EQ filter.
+
+        Args:
+            frequency: Center frequency in Hz
+            gain_db: Gain in decibels (positive = boost, negative = cut)
+            q: Q factor (higher = narrower band)
+            channels: Number of channels
+            sample_rate: Sample rate in Hz
+            format: Sample format
+        """
+        cdef lib.ma_peak2_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_peak2_config_init(
+            <lib.ma_format>format,
+            channels,
+            sample_rate,
+            gain_db,
+            q,
+            frequency
+        )
+
+        result = lib.ma_peak2_init(&config, NULL, &self._filter)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize peak filter (error {result})")
+
+        self._initialized = True
+        self._channels = channels
+        self._sample_rate = sample_rate
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_peak2_uninit(&self._filter, NULL)
+            self._initialized = False
+
+    def reinit(self, double frequency, double gain_db=0.0, double q=1.0):
+        """Reinitialize the filter with new parameters."""
+        if not self._initialized:
+            raise MinimaError("Filter not initialized")
+        cdef lib.ma_peak2_config config = lib.ma_peak2_config_init(
+            lib.ma_format_f32,
+            self._channels,
+            self._sample_rate,
+            gain_db,
+            q,
+            frequency
+        )
+        cdef lib.ma_result result = lib.ma_peak2_reinit(&config, &self._filter)
+        _check_result(result)
+
+    def process(self, bytes data) -> bytes:
+        """Process audio data through the filter."""
+        if not self._initialized:
+            raise MinimaError("Filter not initialized")
+
+        cdef lib.ma_uint64 frame_count = len(data) // (self._channels * sizeof(float))
+        cdef float* output = <float*>malloc(len(data))
+
+        if output == NULL:
+            raise MemoryError("Failed to allocate buffer")
+
+        try:
+            lib.ma_peak2_process_pcm_frames(&self._filter, output, <float*><char*>data, frame_count)
+            return bytes((<char*>output)[:len(data)])
+        finally:
+            free(output)
+
+    @property
+    def latency(self) -> int:
+        """Get the filter latency in frames."""
+        if not self._initialized:
+            raise MinimaError("Filter not initialized")
+        return lib.ma_peak2_get_latency(&self._filter)
+
+
+cdef class LowShelfFilter:
+    """
+    Low shelf filter that boosts or cuts frequencies below a threshold.
+
+    Example:
+        loshelf = LowShelfFilter(frequency=200.0, gain_db=3.0)
+        output = loshelf.process(input_data)
+    """
+    cdef lib.ma_loshelf2 _filter
+    cdef bint _initialized
+    cdef lib.ma_uint32 _channels
+    cdef lib.ma_uint32 _sample_rate
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, double frequency, double gain_db=0.0, double slope=1.0,
+                 int channels=2, int sample_rate=48000,
+                 int format=Format.F32):
+        """
+        Initialize a low shelf filter.
+
+        Args:
+            frequency: Shelf frequency in Hz
+            gain_db: Gain in decibels (positive = boost, negative = cut)
+            slope: Shelf slope (0.0 to 1.0)
+            channels: Number of channels
+            sample_rate: Sample rate in Hz
+            format: Sample format
+        """
+        cdef lib.ma_loshelf2_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_loshelf2_config_init(
+            <lib.ma_format>format,
+            channels,
+            sample_rate,
+            gain_db,
+            slope,
+            frequency
+        )
+
+        result = lib.ma_loshelf2_init(&config, NULL, &self._filter)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize low shelf filter (error {result})")
+
+        self._initialized = True
+        self._channels = channels
+        self._sample_rate = sample_rate
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_loshelf2_uninit(&self._filter, NULL)
+            self._initialized = False
+
+    def reinit(self, double frequency, double gain_db=0.0, double slope=1.0):
+        """Reinitialize the filter with new parameters."""
+        if not self._initialized:
+            raise MinimaError("Filter not initialized")
+        cdef lib.ma_loshelf2_config config = lib.ma_loshelf2_config_init(
+            lib.ma_format_f32,
+            self._channels,
+            self._sample_rate,
+            gain_db,
+            slope,
+            frequency
+        )
+        cdef lib.ma_result result = lib.ma_loshelf2_reinit(&config, &self._filter)
+        _check_result(result)
+
+    def process(self, bytes data) -> bytes:
+        """Process audio data through the filter."""
+        if not self._initialized:
+            raise MinimaError("Filter not initialized")
+
+        cdef lib.ma_uint64 frame_count = len(data) // (self._channels * sizeof(float))
+        cdef float* output = <float*>malloc(len(data))
+
+        if output == NULL:
+            raise MemoryError("Failed to allocate buffer")
+
+        try:
+            lib.ma_loshelf2_process_pcm_frames(&self._filter, output, <float*><char*>data, frame_count)
+            return bytes((<char*>output)[:len(data)])
+        finally:
+            free(output)
+
+    @property
+    def latency(self) -> int:
+        """Get the filter latency in frames."""
+        if not self._initialized:
+            raise MinimaError("Filter not initialized")
+        return lib.ma_loshelf2_get_latency(&self._filter)
+
+
+cdef class HighShelfFilter:
+    """
+    High shelf filter that boosts or cuts frequencies above a threshold.
+
+    Example:
+        hishelf = HighShelfFilter(frequency=8000.0, gain_db=-3.0)
+        output = hishelf.process(input_data)
+    """
+    cdef lib.ma_hishelf2 _filter
+    cdef bint _initialized
+    cdef lib.ma_uint32 _channels
+    cdef lib.ma_uint32 _sample_rate
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, double frequency, double gain_db=0.0, double slope=1.0,
+                 int channels=2, int sample_rate=48000,
+                 int format=Format.F32):
+        """
+        Initialize a high shelf filter.
+
+        Args:
+            frequency: Shelf frequency in Hz
+            gain_db: Gain in decibels (positive = boost, negative = cut)
+            slope: Shelf slope (0.0 to 1.0)
+            channels: Number of channels
+            sample_rate: Sample rate in Hz
+            format: Sample format
+        """
+        cdef lib.ma_hishelf2_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_hishelf2_config_init(
+            <lib.ma_format>format,
+            channels,
+            sample_rate,
+            gain_db,
+            slope,
+            frequency
+        )
+
+        result = lib.ma_hishelf2_init(&config, NULL, &self._filter)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize high shelf filter (error {result})")
+
+        self._initialized = True
+        self._channels = channels
+        self._sample_rate = sample_rate
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_hishelf2_uninit(&self._filter, NULL)
+            self._initialized = False
+
+    def reinit(self, double frequency, double gain_db=0.0, double slope=1.0):
+        """Reinitialize the filter with new parameters."""
+        if not self._initialized:
+            raise MinimaError("Filter not initialized")
+        cdef lib.ma_hishelf2_config config = lib.ma_hishelf2_config_init(
+            lib.ma_format_f32,
+            self._channels,
+            self._sample_rate,
+            gain_db,
+            slope,
+            frequency
+        )
+        cdef lib.ma_result result = lib.ma_hishelf2_reinit(&config, &self._filter)
+        _check_result(result)
+
+    def process(self, bytes data) -> bytes:
+        """Process audio data through the filter."""
+        if not self._initialized:
+            raise MinimaError("Filter not initialized")
+
+        cdef lib.ma_uint64 frame_count = len(data) // (self._channels * sizeof(float))
+        cdef float* output = <float*>malloc(len(data))
+
+        if output == NULL:
+            raise MemoryError("Failed to allocate buffer")
+
+        try:
+            lib.ma_hishelf2_process_pcm_frames(&self._filter, output, <float*><char*>data, frame_count)
+            return bytes((<char*>output)[:len(data)])
+        finally:
+            free(output)
+
+    @property
+    def latency(self) -> int:
+        """Get the filter latency in frames."""
+        if not self._initialized:
+            raise MinimaError("Filter not initialized")
+        return lib.ma_hishelf2_get_latency(&self._filter)
+
+
+# -----------------------------------------------------------------------------
+# Delay Effect
+# -----------------------------------------------------------------------------
+
+cdef class Delay:
+    """
+    Audio delay effect.
+
+    Example:
+        delay = Delay(delay_ms=250, wet=0.5, decay=0.5)
+        output = delay.process(input_data)
+    """
+    cdef lib.ma_delay _delay
+    cdef bint _initialized
+    cdef lib.ma_uint32 _channels
+    cdef lib.ma_uint32 _sample_rate
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, double delay_ms=250.0, float wet=0.5, float decay=0.5,
+                 float dry=1.0, bint delay_start=True,
+                 int channels=2, int sample_rate=48000):
+        """
+        Initialize a delay effect.
+
+        Args:
+            delay_ms: Delay time in milliseconds
+            wet: Wet (delayed) signal level (0.0 to 1.0)
+            decay: Feedback decay (0.0 to 1.0, 0 = no feedback)
+            dry: Dry (original) signal level (0.0 to 1.0)
+            delay_start: Whether to delay the first output
+            channels: Number of channels
+            sample_rate: Sample rate in Hz
+        """
+        cdef lib.ma_delay_config config
+        cdef lib.ma_result result
+        cdef lib.ma_uint32 delay_frames = <lib.ma_uint32>(delay_ms * sample_rate / 1000.0)
+
+        config = lib.ma_delay_config_init(channels, sample_rate, delay_frames, decay)
+        config.wet = wet
+        config.dry = dry
+        config.delayStart = delay_start
+
+        result = lib.ma_delay_init(&config, NULL, &self._delay)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize delay (error {result})")
+
+        self._initialized = True
+        self._channels = channels
+        self._sample_rate = sample_rate
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_delay_uninit(&self._delay, NULL)
+            self._initialized = False
+
+    @property
+    def wet(self) -> float:
+        """Get the wet signal level."""
+        if not self._initialized:
+            raise MinimaError("Delay not initialized")
+        return lib.ma_delay_get_wet(&self._delay)
+
+    @wet.setter
+    def wet(self, float value):
+        """Set the wet signal level."""
+        if not self._initialized:
+            raise MinimaError("Delay not initialized")
+        lib.ma_delay_set_wet(&self._delay, value)
+
+    @property
+    def dry(self) -> float:
+        """Get the dry signal level."""
+        if not self._initialized:
+            raise MinimaError("Delay not initialized")
+        return lib.ma_delay_get_dry(&self._delay)
+
+    @dry.setter
+    def dry(self, float value):
+        """Set the dry signal level."""
+        if not self._initialized:
+            raise MinimaError("Delay not initialized")
+        lib.ma_delay_set_dry(&self._delay, value)
+
+    @property
+    def decay(self) -> float:
+        """Get the feedback decay."""
+        if not self._initialized:
+            raise MinimaError("Delay not initialized")
+        return lib.ma_delay_get_decay(&self._delay)
+
+    @decay.setter
+    def decay(self, float value):
+        """Set the feedback decay."""
+        if not self._initialized:
+            raise MinimaError("Delay not initialized")
+        lib.ma_delay_set_decay(&self._delay, value)
+
+    def process(self, bytes data) -> bytes:
+        """Process audio data through the delay."""
+        if not self._initialized:
+            raise MinimaError("Delay not initialized")
+
+        cdef lib.ma_uint64 frame_count = len(data) // (self._channels * sizeof(float))
+        cdef float* output = <float*>malloc(len(data))
+
+        if output == NULL:
+            raise MemoryError("Failed to allocate buffer")
+
+        try:
+            lib.ma_delay_process_pcm_frames(&self._delay, output, <float*><char*>data, <lib.ma_uint32>frame_count)
+            return bytes((<char*>output)[:len(data)])
+        finally:
+            free(output)
+
+
+# -----------------------------------------------------------------------------
+# Ring Buffers
+# -----------------------------------------------------------------------------
+
+cdef class RingBuffer:
+    """
+    Lock-free ring buffer for audio data.
+
+    Useful for producer-consumer scenarios like audio callbacks.
+
+    Example:
+        rb = RingBuffer(buffer_size=4096)
+        rb.write(data)
+        output = rb.read(1024)
+    """
+    cdef lib.ma_rb _rb
+    cdef bint _initialized
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, size_t buffer_size):
+        """
+        Initialize a ring buffer.
+
+        Args:
+            buffer_size: Size of the buffer in bytes
+        """
+        cdef lib.ma_result result
+
+        result = lib.ma_rb_init(buffer_size, NULL, NULL, &self._rb)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize ring buffer (error {result})")
+
+        self._initialized = True
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_rb_uninit(&self._rb)
+            self._initialized = False
+
+    def reset(self):
+        """Reset the ring buffer to empty state."""
+        if not self._initialized:
+            raise MinimaError("Ring buffer not initialized")
+        lib.ma_rb_reset(&self._rb)
+
+    @property
+    def available_read(self) -> int:
+        """Get the number of bytes available for reading."""
+        if not self._initialized:
+            raise MinimaError("Ring buffer not initialized")
+        return lib.ma_rb_available_read(&self._rb)
+
+    @property
+    def available_write(self) -> int:
+        """Get the number of bytes available for writing."""
+        if not self._initialized:
+            raise MinimaError("Ring buffer not initialized")
+        return lib.ma_rb_available_write(&self._rb)
+
+    def write(self, bytes data) -> int:
+        """
+        Write data to the ring buffer.
+
+        Args:
+            data: Data to write
+
+        Returns:
+            Number of bytes actually written
+        """
+        if not self._initialized:
+            raise MinimaError("Ring buffer not initialized")
+
+        cdef void* write_ptr
+        cdef size_t write_size = len(data)
+        cdef lib.ma_result result
+
+        result = lib.ma_rb_acquire_write(&self._rb, &write_size, &write_ptr)
+        if result != lib.MA_SUCCESS:
+            return 0
+
+        memcpy(write_ptr, <char*>data, write_size)
+        result = lib.ma_rb_commit_write(&self._rb, write_size)
+
+        return write_size
+
+    def read(self, size_t size) -> bytes:
+        """
+        Read data from the ring buffer.
+
+        Args:
+            size: Maximum number of bytes to read
+
+        Returns:
+            Data read from the buffer
+        """
+        if not self._initialized:
+            raise MinimaError("Ring buffer not initialized")
+
+        cdef void* read_ptr
+        cdef size_t read_size = size
+        cdef lib.ma_result result
+
+        result = lib.ma_rb_acquire_read(&self._rb, &read_size, &read_ptr)
+        if result != lib.MA_SUCCESS or read_size == 0:
+            return b''
+
+        cdef bytes data = bytes((<char*>read_ptr)[:read_size])
+        result = lib.ma_rb_commit_read(&self._rb, read_size)
+
+        return data
+
+
+cdef class PCMRingBuffer:
+    """
+    Lock-free ring buffer for PCM audio frames.
+
+    Similar to RingBuffer but works with PCM frames instead of raw bytes.
+
+    Example:
+        rb = PCMRingBuffer(frame_capacity=1024, channels=2)
+        rb.write_frames(data)
+        output = rb.read_frames(256)
+    """
+    cdef lib.ma_pcm_rb _rb
+    cdef bint _initialized
+    cdef lib.ma_uint32 _channels
+    cdef int _bytes_per_frame
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, lib.ma_uint32 frame_capacity, int channels=2,
+                 int format=Format.F32, int sample_rate=48000):
+        """
+        Initialize a PCM ring buffer.
+
+        Args:
+            frame_capacity: Capacity in frames
+            channels: Number of channels
+            format: Sample format
+            sample_rate: Sample rate in Hz
+        """
+        cdef lib.ma_result result
+
+        result = lib.ma_pcm_rb_init(<lib.ma_format>format, channels, frame_capacity, NULL, NULL, &self._rb)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize PCM ring buffer (error {result})")
+
+        self._initialized = True
+        self._channels = channels
+
+        # Calculate bytes per frame
+        if format == lib.ma_format_u8:
+            self._bytes_per_frame = channels * 1
+        elif format == lib.ma_format_s16:
+            self._bytes_per_frame = channels * 2
+        elif format == lib.ma_format_s24:
+            self._bytes_per_frame = channels * 3
+        elif format == lib.ma_format_s32 or format == lib.ma_format_f32:
+            self._bytes_per_frame = channels * 4
+        else:
+            self._bytes_per_frame = channels * 4
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_pcm_rb_uninit(&self._rb)
+            self._initialized = False
+
+    def reset(self):
+        """Reset the ring buffer to empty state."""
+        if not self._initialized:
+            raise MinimaError("PCM ring buffer not initialized")
+        lib.ma_pcm_rb_reset(&self._rb)
+
+    @property
+    def available_read(self) -> int:
+        """Get the number of frames available for reading."""
+        if not self._initialized:
+            raise MinimaError("PCM ring buffer not initialized")
+        return lib.ma_pcm_rb_available_read(&self._rb)
+
+    @property
+    def available_write(self) -> int:
+        """Get the number of frames available for writing."""
+        if not self._initialized:
+            raise MinimaError("PCM ring buffer not initialized")
+        return lib.ma_pcm_rb_available_write(&self._rb)
+
+    def write_frames(self, bytes data) -> int:
+        """
+        Write PCM frames to the ring buffer.
+
+        Args:
+            data: PCM data to write
+
+        Returns:
+            Number of frames actually written
+        """
+        if not self._initialized:
+            raise MinimaError("PCM ring buffer not initialized")
+
+        cdef void* write_ptr
+        cdef lib.ma_uint32 frame_count = len(data) // self._bytes_per_frame
+        cdef lib.ma_result result
+
+        result = lib.ma_pcm_rb_acquire_write(&self._rb, &frame_count, &write_ptr)
+        if result != lib.MA_SUCCESS:
+            return 0
+
+        memcpy(write_ptr, <char*>data, frame_count * self._bytes_per_frame)
+        result = lib.ma_pcm_rb_commit_write(&self._rb, frame_count)
+
+        return frame_count
+
+    def read_frames(self, lib.ma_uint32 frame_count) -> bytes:
+        """
+        Read PCM frames from the ring buffer.
+
+        Args:
+            frame_count: Maximum number of frames to read
+
+        Returns:
+            PCM data read from the buffer
+        """
+        if not self._initialized:
+            raise MinimaError("PCM ring buffer not initialized")
+
+        cdef void* read_ptr
+        cdef lib.ma_uint32 frames_to_read = frame_count
+        cdef lib.ma_result result
+
+        result = lib.ma_pcm_rb_acquire_read(&self._rb, &frames_to_read, &read_ptr)
+        if result != lib.MA_SUCCESS or frames_to_read == 0:
+            return b''
+
+        cdef bytes data = bytes((<char*>read_ptr)[:frames_to_read * self._bytes_per_frame])
+        result = lib.ma_pcm_rb_commit_read(&self._rb, frames_to_read)
+
+        return data
+
+
+# -----------------------------------------------------------------------------
+# Encoder (Recording)
+# -----------------------------------------------------------------------------
+
+class EncodingFormat(IntEnum):
+    """Audio encoding format for the Encoder."""
+    UNKNOWN = 0
+    WAV = 1
+
+
+cdef class Encoder:
+    """
+    Audio file encoder for recording.
+
+    Example:
+        encoder = Encoder("output.wav", channels=2, sample_rate=48000)
+        encoder.write(pcm_data)
+        encoder.close()
+    """
+    cdef lib.ma_encoder _encoder
+    cdef bint _initialized
+    cdef str _path
+    cdef lib.ma_uint32 _channels
+    cdef int _bytes_per_frame
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, str path, int format=Format.F32,
+                 int channels=2, int sample_rate=48000,
+                 int encoding_format=EncodingFormat.WAV):
+        """
+        Open a file for encoding.
+
+        Args:
+            path: Output file path
+            format: Sample format
+            channels: Number of channels
+            sample_rate: Sample rate in Hz
+            encoding_format: Encoding format (WAV)
+        """
+        cdef lib.ma_encoder_config config
+        cdef lib.ma_result result
+        cdef bytes path_bytes = path.encode('utf-8')
+
+        config = lib.ma_encoder_config_init(
+            <lib.ma_encoding_format>encoding_format,
+            <lib.ma_format>format,
+            channels,
+            sample_rate
+        )
+
+        result = lib.ma_encoder_init_file(path_bytes, &config, &self._encoder)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to open '{path}' for encoding (error {result})")
+
+        self._initialized = True
+        self._path = path
+        self._channels = channels
+
+        # Calculate bytes per frame
+        if format == lib.ma_format_u8:
+            self._bytes_per_frame = channels * 1
+        elif format == lib.ma_format_s16:
+            self._bytes_per_frame = channels * 2
+        elif format == lib.ma_format_s24:
+            self._bytes_per_frame = channels * 3
+        elif format == lib.ma_format_s32 or format == lib.ma_format_f32:
+            self._bytes_per_frame = channels * 4
+        else:
+            self._bytes_per_frame = channels * 4
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_encoder_uninit(&self._encoder)
+            self._initialized = False
+
+    def close(self):
+        """Close the encoder and finalize the file."""
+        if self._initialized:
+            lib.ma_encoder_uninit(&self._encoder)
+            self._initialized = False
+
+    @property
+    def path(self) -> str:
+        """Get the output file path."""
+        return self._path
+
+    def write(self, bytes data) -> int:
+        """
+        Write PCM frames to the encoder.
+
+        Args:
+            data: PCM data to encode
+
+        Returns:
+            Number of frames written
+        """
+        if not self._initialized:
+            raise MinimaError("Encoder not initialized")
+
+        cdef lib.ma_uint64 frame_count = len(data) // self._bytes_per_frame
+        cdef lib.ma_uint64 frames_written
+        cdef lib.ma_result result
+
+        result = lib.ma_encoder_write_pcm_frames(&self._encoder, <void*><char*>data, frame_count, &frames_written)
+        _check_result(result)
+
+        return frames_written
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
+    def __repr__(self):
+        return f"Encoder({self._path!r})"
 
 
 # -----------------------------------------------------------------------------

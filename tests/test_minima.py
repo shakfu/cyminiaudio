@@ -269,6 +269,209 @@ class TestExceptions:
         assert issubclass(minima.SoundError, minima.MinimaError)
 
 
+class TestFilters:
+    """Test audio filter classes."""
+
+    def test_lowpass_filter(self):
+        """Test low-pass filter."""
+        lpf = minima.LowPassFilter(cutoff=1000.0, order=2)
+        # Generate test data (1024 frames, 2 channels, float32)
+        waveform = minima.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        # Process through filter
+        output = lpf.process(data)
+        assert len(output) == len(data)
+
+    def test_highpass_filter(self):
+        """Test high-pass filter."""
+        hpf = minima.HighPassFilter(cutoff=200.0, order=2)
+        waveform = minima.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        output = hpf.process(data)
+        assert len(output) == len(data)
+
+    def test_bandpass_filter(self):
+        """Test band-pass filter."""
+        bpf = minima.BandPassFilter(cutoff=1000.0, order=2)
+        waveform = minima.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        output = bpf.process(data)
+        assert len(output) == len(data)
+
+    def test_notch_filter(self):
+        """Test notch filter."""
+        notch = minima.NotchFilter(frequency=60.0, q=10.0)
+        waveform = minima.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        output = notch.process(data)
+        assert len(output) == len(data)
+
+    def test_peak_filter(self):
+        """Test peak EQ filter."""
+        peak = minima.PeakFilter(frequency=1000.0, gain_db=6.0, q=1.0)
+        waveform = minima.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        output = peak.process(data)
+        assert len(output) == len(data)
+
+    def test_lowshelf_filter(self):
+        """Test low shelf filter."""
+        loshelf = minima.LowShelfFilter(frequency=200.0, gain_db=3.0)
+        waveform = minima.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        output = loshelf.process(data)
+        assert len(output) == len(data)
+
+    def test_highshelf_filter(self):
+        """Test high shelf filter."""
+        hishelf = minima.HighShelfFilter(frequency=8000.0, gain_db=-3.0)
+        waveform = minima.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        output = hishelf.process(data)
+        assert len(output) == len(data)
+
+    def test_filter_reinit(self):
+        """Test reinitializing a filter with new cutoff."""
+        lpf = minima.LowPassFilter(cutoff=1000.0, order=2)
+        lpf.reinit(cutoff=2000.0, order=2)  # Order must match original
+        # Should not raise
+
+
+class TestDelay:
+    """Test delay effect."""
+
+    def test_delay_init(self):
+        """Test delay initialization."""
+        delay = minima.Delay(delay_ms=250.0, wet=0.5, decay=0.3)
+        assert delay.wet == 0.5
+        assert abs(delay.decay - 0.3) < 0.01
+
+    def test_delay_process(self):
+        """Test delay processing."""
+        delay = minima.Delay(delay_ms=100.0)
+        waveform = minima.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        output = delay.process(data)
+        assert len(output) == len(data)
+
+    def test_delay_properties(self):
+        """Test delay property setters."""
+        delay = minima.Delay()
+        delay.wet = 0.7
+        delay.dry = 0.8
+        delay.decay = 0.4
+        assert abs(delay.wet - 0.7) < 0.01
+        assert abs(delay.dry - 0.8) < 0.01
+        assert abs(delay.decay - 0.4) < 0.01
+
+
+class TestRingBuffers:
+    """Test ring buffer classes."""
+
+    def test_ring_buffer_init(self):
+        """Test ring buffer initialization."""
+        rb = minima.RingBuffer(buffer_size=4096)
+        assert rb.available_read == 0
+        assert rb.available_write > 0
+
+    def test_ring_buffer_write_read(self):
+        """Test ring buffer write and read."""
+        rb = minima.RingBuffer(buffer_size=4096)
+        data = b'Hello, World!'
+        written = rb.write(data)
+        assert written == len(data)
+        assert rb.available_read == len(data)
+
+        output = rb.read(len(data))
+        assert output == data
+
+    def test_ring_buffer_reset(self):
+        """Test ring buffer reset."""
+        rb = minima.RingBuffer(buffer_size=4096)
+        rb.write(b'test data')
+        rb.reset()
+        assert rb.available_read == 0
+
+    def test_pcm_ring_buffer_init(self):
+        """Test PCM ring buffer initialization."""
+        rb = minima.PCMRingBuffer(frame_capacity=1024, channels=2)
+        assert rb.available_read == 0
+        assert rb.available_write > 0
+
+    def test_pcm_ring_buffer_write_read(self):
+        """Test PCM ring buffer write and read."""
+        rb = minima.PCMRingBuffer(frame_capacity=1024, channels=2)
+        waveform = minima.Waveform()
+        data = waveform.read(256)
+
+        frames_written = rb.write_frames(data)
+        assert frames_written == 256
+
+        output = rb.read_frames(256)
+        assert len(output) == len(data)
+
+
+class TestEncoder:
+    """Test encoder class."""
+
+    def test_encoder_init(self):
+        """Test encoder initialization."""
+        import tempfile
+        import os
+
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+            path = f.name
+
+        try:
+            encoder = minima.Encoder(path, channels=2, sample_rate=48000)
+            assert encoder.path == path
+            encoder.close()
+            assert os.path.exists(path)
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
+
+    def test_encoder_write(self):
+        """Test encoder writing."""
+        import tempfile
+        import os
+
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+            path = f.name
+
+        try:
+            with minima.Encoder(path) as encoder:
+                waveform = minima.Waveform(frequency=440.0)
+                data = waveform.read(1024)
+                frames_written = encoder.write(data)
+                assert frames_written == 1024
+
+            # Verify file was written
+            assert os.path.exists(path)
+            assert os.path.getsize(path) > 0
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
+
+    def test_encoder_context_manager(self):
+        """Test encoder as context manager."""
+        import tempfile
+        import os
+
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+            path = f.name
+
+        try:
+            with minima.Encoder(path) as encoder:
+                waveform = minima.Waveform()
+                encoder.write(waveform.read(512))
+            # File should be closed and valid
+            assert os.path.exists(path)
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
+
+
 # Interactive tests - require user input, skip in automated runs
 @pytest.mark.skip(reason="Interactive: requires user input")
 def test_play_sine():

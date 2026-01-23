@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+#### Filters
+- `LowPassFilter` - Attenuates frequencies above cutoff
+- `HighPassFilter` - Attenuates frequencies below cutoff
+- `BandPassFilter` - Passes frequencies within a range
+- `NotchFilter` - Attenuates a specific frequency (band-reject)
+- `PeakFilter` - Peaking EQ for boosting/cutting specific frequencies
+- `LowShelfFilter` - Boosts/cuts frequencies below threshold
+- `HighShelfFilter` - Boosts/cuts frequencies above threshold
+
+#### Effects
+- `Delay` - Audio delay effect with wet/dry/decay control
+
+#### Ring Buffers
+- `RingBuffer` - Lock-free ring buffer for raw bytes
+- `PCMRingBuffer` - Lock-free ring buffer for PCM frames
+
+#### Encoder
+- `Encoder` - Audio file encoder for recording (WAV format)
+- `EncodingFormat` enum
+
+#### Tests
+- Added 19 new tests for filters, delay, ring buffers, and encoder
+
 ## [0.1.0] - 2026-01-23
 
 ### Added
