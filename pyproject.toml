@@ -1,0 +1,18 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "cython>=3.0"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "minima"
+version = "0.1.0"
+description = "Minimal Python bindings for miniaudio"
+requires-python = ">=3.9"
+
+[tool.scikit-build]
+wheel.packages = ["src/minima"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]

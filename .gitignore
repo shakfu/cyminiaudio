@@ -1,6 +1,6 @@
 .DS_Store
 
-tests/test_miniaudio/
+__pycache__
 
 # virtualenv
 venv
@@ -58,3 +58,10 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+.*_cache
+.cache
+
+# agentics
+.claude
+CLAUDE.md
+
