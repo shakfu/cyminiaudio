@@ -34,73 +34,93 @@ Example:
 """
 
 from cyminiaudio._core import (
-    RESOURCE_MANAGER_DATA_SOURCE_FLAG_ASYNC,
-    RESOURCE_MANAGER_DATA_SOURCE_FLAG_DECODE,
-    RESOURCE_MANAGER_DATA_SOURCE_FLAG_STREAM,
-    RESOURCE_MANAGER_DATA_SOURCE_FLAG_WAIT_INIT,
-    # Resource manager flags
-    RESOURCE_MANAGER_FLAG_NON_BLOCKING,
-    SOUND_FLAG_ASYNC,
-    SOUND_FLAG_DECODE,
-    SOUND_FLAG_NO_PITCH,
-    SOUND_FLAG_NO_SPATIALIZATION,
-    # Sound flags
-    SOUND_FLAG_STREAM,
-    AttenuationModel,
-    BandPassFilter,
-    BPFNode,
-    Decoder,
-    DecoderError,
-    # Effects
-    Delay,
-    DelayNode,
-    DeviceError,
-    # Device enumeration
-    DeviceInfo,
-    DeviceType,
-    Encoder,
-    EncodingFormat,
-    # Core classes
-    Engine,
-    EngineError,
-    # Enums
-    Format,
-    HighPassFilter,
-    HighShelfFilter,
-    HPFNode,
-    # Filters
-    LowPassFilter,
-    LowShelfFilter,
-    LPFNode,
-    # Exceptions
-    MinimaError,
-    # Node graph
-    NodeGraph,
-    NodeState,
-    Noise,
-    NoiseType,
-    NotchFilter,
-    PCMRingBuffer,
-    PeakFilter,
-    ResourceDataSource,
-    # Resource manager
-    ResourceManager,
-    # Ring buffers
-    RingBuffer,
-    Sound,
-    SoundError,
-    SplitterNode,
-    Waveform,
-    WaveformType,
-    engine_play_file,
-    get_default_device,
     # Version
     get_version,
     get_version_numbers,
+    # Exceptions
+    MinimaError,
+    DeviceError,
+    DecoderError,
+    EngineError,
+    SoundError,
+    # Enums
+    Format,
+    DeviceType,
+    WaveformType,
+    NoiseType,
+    AttenuationModel,
+    EncodingFormat,
+    NodeState,
+    PanMode,
+    Positioning,
+    # Device enumeration
+    DeviceInfo,
     list_devices,
-    play_file,
-    # Legacy functions (for backwards compatibility)
+    get_default_device,
+    # Core classes
+    Engine,
+    Sound,
+    Decoder,
+    Encoder,
+    Waveform,
+    Noise,
+    # Filters
+    LowPassFilter,
+    HighPassFilter,
+    BandPassFilter,
+    NotchFilter,
+    PeakFilter,
+    LowShelfFilter,
+    HighShelfFilter,
+    # Effects
+    Delay,
+    # Ring buffers
+    RingBuffer,
+    PCMRingBuffer,
+    # Data conversion
+    LinearResampler,
+    ChannelConverter,
+    DataConverter,
+    # Volume/Panning
+    Panner,
+    Fader,
+    Gainer,
+    # 3D Audio / Spatialization
+    SpatializerListener,
+    Spatializer,
+    # Audio buffers
+    AudioBuffer,
+    # Node graph
+    NodeGraph,
+    SplitterNode,
+    LPFNode,
+    HPFNode,
+    BPFNode,
+    DelayNode,
+    NotchNode,
+    PeakNode,
+    LoShelfNode,
+    HiShelfNode,
+    BiquadNode,
+    # Resource manager
+    ResourceManager,
+    ResourceDataSource,
+    # Sound flags
+    SOUND_FLAG_STREAM,
+    SOUND_FLAG_DECODE,
+    SOUND_FLAG_ASYNC,
+    SOUND_FLAG_NO_PITCH,
+    SOUND_FLAG_NO_SPATIALIZATION,
+    # Resource manager flags
+    RESOURCE_MANAGER_FLAG_NON_BLOCKING,
+    RESOURCE_MANAGER_DATA_SOURCE_FLAG_STREAM,
+    RESOURCE_MANAGER_DATA_SOURCE_FLAG_DECODE,
+    RESOURCE_MANAGER_DATA_SOURCE_FLAG_ASYNC,
+    RESOURCE_MANAGER_DATA_SOURCE_FLAG_WAIT_INIT,
+    # Legacy functions
     play_sine,
+    play_file,
+    engine_play_file,
 )
 
 __all__ = [
@@ -121,6 +141,8 @@ __all__ = [
     "AttenuationModel",
     "EncodingFormat",
     "NodeState",
+    "PanMode",
+    "Positioning",
     # Device enumeration
     "DeviceInfo",
     "list_devices",
@@ -145,6 +167,19 @@ __all__ = [
     # Ring buffers
     "RingBuffer",
     "PCMRingBuffer",
+    # Data conversion
+    "LinearResampler",
+    "ChannelConverter",
+    "DataConverter",
+    # Volume/Panning
+    "Panner",
+    "Fader",
+    "Gainer",
+    # 3D Audio / Spatialization
+    "SpatializerListener",
+    "Spatializer",
+    # Audio buffers
+    "AudioBuffer",
     # Node graph
     "NodeGraph",
     "SplitterNode",
@@ -152,6 +187,11 @@ __all__ = [
     "HPFNode",
     "BPFNode",
     "DelayNode",
+    "NotchNode",
+    "PeakNode",
+    "LoShelfNode",
+    "HiShelfNode",
+    "BiquadNode",
     # Resource manager
     "ResourceManager",
     "ResourceDataSource",

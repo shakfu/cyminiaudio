@@ -588,6 +588,233 @@ class TestResourceManager:
             assert source.is_looping
 
 
+class TestDataConversion:
+    """Test data conversion classes."""
+
+    def test_linear_resampler_init(self):
+        """Test linear resampler initialization."""
+        resampler = cyminiaudio.LinearResampler(sample_rate_in=44100, sample_rate_out=48000)
+        assert resampler.input_latency >= 0
+        assert resampler.output_latency >= 0
+
+    def test_linear_resampler_process(self):
+        """Test linear resampler processing."""
+        resampler = cyminiaudio.LinearResampler(sample_rate_in=44100, sample_rate_out=48000)
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        output = resampler.process(data)
+        assert len(output) > 0
+        assert isinstance(output, bytes)
+
+    def test_channel_converter_init(self):
+        """Test channel converter initialization."""
+        converter = cyminiaudio.ChannelConverter(channels_in=1, channels_out=2)
+        assert converter.channels_in == 1
+        assert converter.channels_out == 2
+
+    def test_channel_converter_mono_to_stereo(self):
+        """Test converting mono to stereo."""
+        converter = cyminiaudio.ChannelConverter(channels_in=1, channels_out=2)
+        # Create mono waveform data
+        waveform = cyminiaudio.Waveform(channels=1, frequency=440.0)
+        mono_data = waveform.read(1024)
+        stereo_data = converter.process(mono_data)
+        # Stereo should be twice the size (2 channels vs 1)
+        assert len(stereo_data) == len(mono_data) * 2
+
+    def test_data_converter_init(self):
+        """Test data converter initialization."""
+        converter = cyminiaudio.DataConverter(
+            format_in=cyminiaudio.Format.F32,
+            format_out=cyminiaudio.Format.F32,
+            channels_in=2, channels_out=2,
+            sample_rate_in=44100, sample_rate_out=48000
+        )
+        # Should not raise
+
+    def test_data_converter_process(self):
+        """Test data converter processing."""
+        converter = cyminiaudio.DataConverter(
+            sample_rate_in=44100, sample_rate_out=48000
+        )
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        output = converter.process(data)
+        assert len(output) > 0
+
+
+class TestVolumePanning:
+    """Test volume and panning classes."""
+
+    def test_panner_init(self):
+        """Test panner initialization."""
+        panner = cyminiaudio.Panner()
+        assert panner.pan == 0.0
+
+    def test_panner_process(self):
+        """Test panner processing."""
+        panner = cyminiaudio.Panner()
+        panner.pan = -0.5
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        output = panner.process(data)
+        assert len(output) == len(data)
+
+    def test_panner_pan_property(self):
+        """Test panner pan property."""
+        panner = cyminiaudio.Panner()
+        panner.pan = 0.75
+        assert abs(panner.pan - 0.75) < 0.01
+
+    def test_fader_init(self):
+        """Test fader initialization."""
+        fader = cyminiaudio.Fader()
+        assert fader.current_volume >= 0
+
+    def test_fader_set_fade(self):
+        """Test fader fade setting."""
+        fader = cyminiaudio.Fader()
+        fader.set_fade(0.0, 1.0, 48000)
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        output = fader.process(data)
+        assert len(output) == len(data)
+
+    def test_gainer_init(self):
+        """Test gainer initialization."""
+        gainer = cyminiaudio.Gainer(channels=2)
+        # Should not raise
+
+    def test_gainer_process(self):
+        """Test gainer processing."""
+        gainer = cyminiaudio.Gainer(channels=2)
+        gainer.set_gain(0.5)
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        output = gainer.process(data)
+        assert len(output) == len(data)
+
+
+class TestSpatialization:
+    """Test 3D audio spatialization classes."""
+
+    def test_spatializer_listener_init(self):
+        """Test spatializer listener initialization."""
+        listener = cyminiaudio.SpatializerListener(channels_out=2)
+        pos = listener.get_position()
+        assert len(pos) == 3
+
+    def test_spatializer_listener_position(self):
+        """Test setting listener position."""
+        listener = cyminiaudio.SpatializerListener(channels_out=2)
+        listener.set_position(1.0, 2.0, 3.0)
+        pos = listener.get_position()
+        assert abs(pos[0] - 1.0) < 0.01
+        assert abs(pos[1] - 2.0) < 0.01
+        assert abs(pos[2] - 3.0) < 0.01
+
+    def test_spatializer_init(self):
+        """Test spatializer initialization."""
+        spatializer = cyminiaudio.Spatializer(channels_in=1, channels_out=2)
+        pos = spatializer.get_position()
+        assert len(pos) == 3
+
+    def test_spatializer_process(self):
+        """Test spatializer processing."""
+        listener = cyminiaudio.SpatializerListener(channels_out=2)
+        spatializer = cyminiaudio.Spatializer(channels_in=1, channels_out=2)
+        spatializer.set_position(5.0, 0.0, 0.0)
+        waveform = cyminiaudio.Waveform(channels=1, frequency=440.0)
+        mono_data = waveform.read(1024)
+        output = spatializer.process(listener, mono_data)
+        # Output should be stereo (2 channels)
+        assert len(output) == len(mono_data) * 2
+
+    def test_spatializer_properties(self):
+        """Test spatializer properties."""
+        spatializer = cyminiaudio.Spatializer(channels_in=1, channels_out=2)
+        spatializer.min_distance = 0.5
+        spatializer.max_distance = 50.0
+        spatializer.rolloff = 1.5
+        assert abs(spatializer.min_distance - 0.5) < 0.01
+        assert abs(spatializer.max_distance - 50.0) < 0.01
+        assert abs(spatializer.rolloff - 1.5) < 0.01
+
+
+class TestAudioBuffer:
+    """Test audio buffer class."""
+
+    def test_audio_buffer_init(self):
+        """Test audio buffer initialization."""
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        buffer = cyminiaudio.AudioBuffer(data, channels=2)
+        assert buffer.length == 1024
+        assert buffer.cursor == 0
+
+    def test_audio_buffer_read(self):
+        """Test reading from audio buffer."""
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        buffer = cyminiaudio.AudioBuffer(data, channels=2)
+        output = buffer.read(512)
+        assert len(output) > 0
+        assert buffer.cursor == 512
+
+    def test_audio_buffer_seek(self):
+        """Test seeking in audio buffer."""
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        data = waveform.read(1024)
+        buffer = cyminiaudio.AudioBuffer(data, channels=2)
+        buffer.read(512)
+        buffer.seek(0)
+        assert buffer.cursor == 0
+
+    def test_audio_buffer_at_end(self):
+        """Test audio buffer at_end property."""
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        data = waveform.read(256)
+        buffer = cyminiaudio.AudioBuffer(data, channels=2)
+        assert not buffer.at_end
+        buffer.read(256)
+        assert buffer.at_end
+
+
+class TestAdditionalNodes:
+    """Test additional node graph nodes."""
+
+    def test_notch_node_init(self):
+        """Test notch node initialization."""
+        with cyminiaudio.NodeGraph(channels=2) as graph:
+            notch = cyminiaudio.NotchNode(graph, frequency=60.0, q=10.0)
+            assert notch.state == cyminiaudio.NodeState.STARTED
+
+    def test_peak_node_init(self):
+        """Test peak node initialization."""
+        with cyminiaudio.NodeGraph(channels=2) as graph:
+            peak = cyminiaudio.PeakNode(graph, frequency=1000.0, gain_db=6.0)
+            assert peak.state == cyminiaudio.NodeState.STARTED
+
+    def test_loshelf_node_init(self):
+        """Test low shelf node initialization."""
+        with cyminiaudio.NodeGraph(channels=2) as graph:
+            loshelf = cyminiaudio.LoShelfNode(graph, frequency=200.0, gain_db=3.0)
+            assert loshelf.state == cyminiaudio.NodeState.STARTED
+
+    def test_hishelf_node_init(self):
+        """Test high shelf node initialization."""
+        with cyminiaudio.NodeGraph(channels=2) as graph:
+            hishelf = cyminiaudio.HiShelfNode(graph, frequency=8000.0, gain_db=-3.0)
+            assert hishelf.state == cyminiaudio.NodeState.STARTED
+
+    def test_biquad_node_init(self):
+        """Test biquad node initialization."""
+        with cyminiaudio.NodeGraph(channels=2) as graph:
+            # Pass-through coefficients
+            biquad = cyminiaudio.BiquadNode(graph, b0=1.0, b1=0.0, b2=0.0, a0=1.0, a1=0.0, a2=0.0)
+            assert biquad.state == cyminiaudio.NodeState.STARTED
+
+
 # Interactive tests - require user input, skip in automated runs
 @pytest.mark.skip(reason="Interactive: requires user input")
 def test_play_sine():

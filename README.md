@@ -21,7 +21,11 @@ A Cython-based audio library providing high-level Python APIs for audio playback
 
 ## Installation
 
-Requires Python 3.9+ and a C compiler.
+```sh
+pip install cyminiaudio
+```
+
+To build, requires Python 3.9+ and a C compiler.
 
 ```bash
 # Clone the repository

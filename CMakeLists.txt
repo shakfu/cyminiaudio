@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.15...3.30)
 project(${SKBUILD_PROJECT_NAME} VERSION ${SKBUILD_PROJECT_VERSION} LANGUAGES C)
 
+# miniaudio library path
+set(MINIAUDIO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/miniaudio/0.11.24")
+
 find_package(Python REQUIRED COMPONENTS Interpreter Development.Module)
 
 # Cython: generate _core.c from _core.pyx
@@ -20,10 +23,10 @@ add_custom_command(
 
 # Build miniaudio as a static library
 add_library(miniaudio STATIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/miniaudio/miniaudio.c
+    ${MINIAUDIO_DIR}/miniaudio.c
 )
 target_include_directories(miniaudio PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/miniaudio
+    ${MINIAUDIO_DIR}
 )
 
 # Platform-specific configuration
@@ -51,7 +54,7 @@ python_add_library(_core MODULE
     WITH_SOABI
 )
 target_include_directories(_core PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/miniaudio
+    ${MINIAUDIO_DIR}
 )
 target_link_libraries(_core PRIVATE miniaudio)
 

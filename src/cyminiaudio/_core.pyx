@@ -3532,6 +3532,1232 @@ cdef class ResourceDataSource:
 
 
 # -----------------------------------------------------------------------------
+# Data Conversion Classes
+# -----------------------------------------------------------------------------
+
+cdef class LinearResampler:
+    """
+    Linear interpolation resampler for sample rate conversion.
+
+    Example:
+        resampler = LinearResampler(sample_rate_in=44100, sample_rate_out=48000)
+        output = resampler.process(input_data)
+    """
+    cdef lib.ma_linear_resampler _resampler
+    cdef bint _initialized
+    cdef lib.ma_uint32 _channels
+    cdef lib.ma_uint32 _sample_rate_in
+    cdef lib.ma_uint32 _sample_rate_out
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, int sample_rate_in, int sample_rate_out,
+                 int channels=2, int format=Format.F32):
+        """
+        Initialize a linear resampler.
+
+        Args:
+            sample_rate_in: Input sample rate in Hz
+            sample_rate_out: Output sample rate in Hz
+            channels: Number of channels
+            format: Sample format
+        """
+        cdef lib.ma_linear_resampler_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_linear_resampler_config_init(
+            <lib.ma_format>format,
+            channels,
+            sample_rate_in,
+            sample_rate_out
+        )
+
+        result = lib.ma_linear_resampler_init(&config, NULL, &self._resampler)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize linear resampler (error {result})")
+
+        self._initialized = True
+        self._channels = channels
+        self._sample_rate_in = sample_rate_in
+        self._sample_rate_out = sample_rate_out
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_linear_resampler_uninit(&self._resampler, NULL)
+            self._initialized = False
+
+    def process(self, bytes data) -> bytes:
+        """
+        Process audio data through the resampler.
+
+        Args:
+            data: Input audio data (float32 PCM)
+
+        Returns:
+            Resampled audio data
+        """
+        if not self._initialized:
+            raise MinimaError("Resampler not initialized")
+
+        cdef lib.ma_uint64 input_frames = len(data) // (self._channels * sizeof(float))
+        cdef lib.ma_uint64 output_frames = 0
+        cdef lib.ma_uint64 frames_in = input_frames
+        cdef lib.ma_uint64 frames_out
+
+        # Calculate expected output frames
+        lib.ma_linear_resampler_get_expected_output_frame_count(&self._resampler, input_frames, &output_frames)
+
+        cdef size_t output_size = output_frames * self._channels * sizeof(float)
+        cdef float* output = <float*>malloc(output_size)
+
+        if output == NULL:
+            raise MemoryError("Failed to allocate buffer")
+
+        try:
+            frames_out = output_frames
+            lib.ma_linear_resampler_process_pcm_frames(&self._resampler,
+                <const void*>data, &frames_in, output, &frames_out)
+            return bytes((<char*>output)[:frames_out * self._channels * sizeof(float)])
+        finally:
+            free(output)
+
+    def set_rate(self, int sample_rate_in, int sample_rate_out):
+        """Change the sample rate conversion ratio."""
+        if not self._initialized:
+            raise MinimaError("Resampler not initialized")
+        cdef lib.ma_result result = lib.ma_linear_resampler_set_rate(&self._resampler, sample_rate_in, sample_rate_out)
+        _check_result(result)
+        self._sample_rate_in = sample_rate_in
+        self._sample_rate_out = sample_rate_out
+
+    def reset(self):
+        """Reset the resampler state."""
+        if not self._initialized:
+            raise MinimaError("Resampler not initialized")
+        lib.ma_linear_resampler_reset(&self._resampler)
+
+    @property
+    def input_latency(self) -> int:
+        """Get the input latency in frames."""
+        if not self._initialized:
+            return 0
+        return lib.ma_linear_resampler_get_input_latency(&self._resampler)
+
+    @property
+    def output_latency(self) -> int:
+        """Get the output latency in frames."""
+        if not self._initialized:
+            return 0
+        return lib.ma_linear_resampler_get_output_latency(&self._resampler)
+
+
+cdef class ChannelConverter:
+    """
+    Channel converter for converting between different channel counts.
+
+    Example:
+        converter = ChannelConverter(channels_in=1, channels_out=2)  # Mono to stereo
+        stereo_data = converter.process(mono_data)
+    """
+    cdef lib.ma_channel_converter _converter
+    cdef bint _initialized
+    cdef lib.ma_uint32 _channels_in
+    cdef lib.ma_uint32 _channels_out
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, int channels_in, int channels_out, int format=Format.F32):
+        """
+        Initialize a channel converter.
+
+        Args:
+            channels_in: Number of input channels
+            channels_out: Number of output channels
+            format: Sample format
+        """
+        cdef lib.ma_channel_converter_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_channel_converter_config_init(
+            <lib.ma_format>format,
+            channels_in, NULL,
+            channels_out, NULL,
+            lib.ma_channel_mix_mode_rectangular
+        )
+
+        result = lib.ma_channel_converter_init(&config, NULL, &self._converter)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize channel converter (error {result})")
+
+        self._initialized = True
+        self._channels_in = channels_in
+        self._channels_out = channels_out
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_channel_converter_uninit(&self._converter, NULL)
+            self._initialized = False
+
+    def process(self, bytes data) -> bytes:
+        """
+        Process audio data through the channel converter.
+
+        Args:
+            data: Input audio data
+
+        Returns:
+            Channel-converted audio data
+        """
+        if not self._initialized:
+            raise MinimaError("Channel converter not initialized")
+
+        cdef lib.ma_uint64 frame_count = len(data) // (self._channels_in * sizeof(float))
+        cdef size_t output_size = frame_count * self._channels_out * sizeof(float)
+        cdef float* output = <float*>malloc(output_size)
+
+        if output == NULL:
+            raise MemoryError("Failed to allocate buffer")
+
+        try:
+            lib.ma_channel_converter_process_pcm_frames(&self._converter,
+                output, <const void*>data, frame_count)
+            return bytes((<char*>output)[:output_size])
+        finally:
+            free(output)
+
+    @property
+    def channels_in(self) -> int:
+        """Number of input channels."""
+        return self._channels_in
+
+    @property
+    def channels_out(self) -> int:
+        """Number of output channels."""
+        return self._channels_out
+
+
+cdef class DataConverter:
+    """
+    General-purpose data converter for format, channel, and sample rate conversion.
+
+    Example:
+        converter = DataConverter(
+            format_in=Format.S16, format_out=Format.F32,
+            channels_in=1, channels_out=2,
+            sample_rate_in=44100, sample_rate_out=48000
+        )
+        output = converter.process(input_data)
+    """
+    cdef lib.ma_data_converter _converter
+    cdef bint _initialized
+    cdef lib.ma_uint32 _channels_in
+    cdef lib.ma_uint32 _channels_out
+    cdef lib.ma_format _format_in
+    cdef lib.ma_format _format_out
+    cdef lib.ma_uint32 _sample_rate_in
+    cdef lib.ma_uint32 _sample_rate_out
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, int format_in=Format.F32, int format_out=Format.F32,
+                 int channels_in=2, int channels_out=2,
+                 int sample_rate_in=48000, int sample_rate_out=48000):
+        """
+        Initialize a data converter.
+
+        Args:
+            format_in: Input sample format
+            format_out: Output sample format
+            channels_in: Number of input channels
+            channels_out: Number of output channels
+            sample_rate_in: Input sample rate in Hz
+            sample_rate_out: Output sample rate in Hz
+        """
+        cdef lib.ma_data_converter_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_data_converter_config_init(
+            <lib.ma_format>format_in,
+            <lib.ma_format>format_out,
+            channels_in, channels_out,
+            sample_rate_in, sample_rate_out
+        )
+
+        result = lib.ma_data_converter_init(&config, NULL, &self._converter)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize data converter (error {result})")
+
+        self._initialized = True
+        self._format_in = <lib.ma_format>format_in
+        self._format_out = <lib.ma_format>format_out
+        self._channels_in = channels_in
+        self._channels_out = channels_out
+        self._sample_rate_in = sample_rate_in
+        self._sample_rate_out = sample_rate_out
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_data_converter_uninit(&self._converter, NULL)
+            self._initialized = False
+
+    def process(self, bytes data) -> bytes:
+        """
+        Process audio data through the converter.
+
+        Args:
+            data: Input audio data
+
+        Returns:
+            Converted audio data
+        """
+        if not self._initialized:
+            raise MinimaError("Data converter not initialized")
+
+        # Calculate bytes per sample for input
+        cdef int bytes_in = 4  # default f32
+        if self._format_in == lib.ma_format_u8:
+            bytes_in = 1
+        elif self._format_in == lib.ma_format_s16:
+            bytes_in = 2
+        elif self._format_in == lib.ma_format_s24:
+            bytes_in = 3
+
+        # Calculate bytes per sample for output
+        cdef int bytes_out = 4  # default f32
+        if self._format_out == lib.ma_format_u8:
+            bytes_out = 1
+        elif self._format_out == lib.ma_format_s16:
+            bytes_out = 2
+        elif self._format_out == lib.ma_format_s24:
+            bytes_out = 3
+
+        cdef lib.ma_uint64 input_frames = len(data) // (self._channels_in * bytes_in)
+        cdef lib.ma_uint64 frames_in = input_frames
+        cdef lib.ma_uint64 frames_out
+
+        # Estimate output frames (with some headroom for resampling)
+        cdef lib.ma_uint64 output_frames = <lib.ma_uint64>((input_frames * self._sample_rate_out) / self._sample_rate_in) + 16
+        frames_out = output_frames
+
+        cdef size_t output_size = output_frames * self._channels_out * bytes_out
+        cdef void* output = malloc(output_size)
+
+        if output == NULL:
+            raise MemoryError("Failed to allocate buffer")
+
+        try:
+            lib.ma_data_converter_process_pcm_frames(&self._converter,
+                <const void*>data, &frames_in, output, &frames_out)
+            return bytes((<char*>output)[:frames_out * self._channels_out * bytes_out])
+        finally:
+            free(output)
+
+    def reset(self):
+        """Reset the converter state."""
+        if not self._initialized:
+            raise MinimaError("Data converter not initialized")
+        lib.ma_data_converter_reset(&self._converter)
+
+
+# -----------------------------------------------------------------------------
+# Volume/Panning Classes
+# -----------------------------------------------------------------------------
+
+class PanMode(IntEnum):
+    """Panning mode enumeration."""
+    BALANCE = 0  # Simple left/right balance
+    PAN = 1      # True panning
+
+
+cdef class Panner:
+    """
+    Stereo panner for positioning audio in the stereo field.
+
+    Example:
+        panner = Panner()
+        panner.pan = -0.5  # Pan slightly left
+        output = panner.process(input_data)
+    """
+    cdef lib.ma_panner _panner
+    cdef bint _initialized
+    cdef lib.ma_uint32 _channels
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, int channels=2, int format=Format.F32):
+        """
+        Initialize a panner.
+
+        Args:
+            channels: Number of channels (typically 2 for stereo)
+            format: Sample format
+        """
+        cdef lib.ma_panner_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_panner_config_init(<lib.ma_format>format, channels)
+        result = lib.ma_panner_init(&config, &self._panner)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize panner (error {result})")
+
+        self._initialized = True
+        self._channels = channels
+
+    def process(self, bytes data) -> bytes:
+        """Process audio data through the panner."""
+        if not self._initialized:
+            raise MinimaError("Panner not initialized")
+
+        cdef lib.ma_uint64 frame_count = len(data) // (self._channels * sizeof(float))
+        cdef size_t data_len = len(data)
+        cdef float* output = <float*>malloc(data_len)
+
+        if output == NULL:
+            raise MemoryError("Failed to allocate buffer")
+
+        try:
+            lib.ma_panner_process_pcm_frames(&self._panner, output, <const void*>data, frame_count)
+            return bytes((<char*>output)[:data_len])
+        finally:
+            free(output)
+
+    @property
+    def pan(self) -> float:
+        """Pan position (-1.0 = left, 0.0 = center, 1.0 = right)."""
+        return lib.ma_panner_get_pan(&self._panner)
+
+    @pan.setter
+    def pan(self, float value):
+        lib.ma_panner_set_pan(&self._panner, value)
+
+    @property
+    def mode(self) -> int:
+        """Panning mode."""
+        return lib.ma_panner_get_mode(&self._panner)
+
+    @mode.setter
+    def mode(self, int value):
+        lib.ma_panner_set_mode(&self._panner, <lib.ma_pan_mode>value)
+
+
+cdef class Fader:
+    """
+    Volume fader with smooth transitions.
+
+    Example:
+        fader = Fader()
+        fader.set_fade(0.0, 1.0, 48000)  # Fade in over 1 second at 48kHz
+        output = fader.process(input_data)
+    """
+    cdef lib.ma_fader _fader
+    cdef bint _initialized
+    cdef lib.ma_uint32 _channels
+    cdef lib.ma_uint32 _sample_rate
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, int channels=2, int sample_rate=48000, int format=Format.F32):
+        """
+        Initialize a fader.
+
+        Args:
+            channels: Number of channels
+            sample_rate: Sample rate in Hz
+            format: Sample format
+        """
+        cdef lib.ma_fader_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_fader_config_init(<lib.ma_format>format, channels, sample_rate)
+        result = lib.ma_fader_init(&config, &self._fader)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize fader (error {result})")
+
+        self._initialized = True
+        self._channels = channels
+        self._sample_rate = sample_rate
+
+    def set_fade(self, float volume_start, float volume_end, lib.ma_uint64 length_in_frames):
+        """
+        Set up a fade.
+
+        Args:
+            volume_start: Starting volume (0.0 to 1.0+)
+            volume_end: Ending volume (0.0 to 1.0+)
+            length_in_frames: Duration of fade in frames
+        """
+        if not self._initialized:
+            raise MinimaError("Fader not initialized")
+        lib.ma_fader_set_fade(&self._fader, volume_start, volume_end, length_in_frames)
+
+    def process(self, bytes data) -> bytes:
+        """Process audio data through the fader."""
+        if not self._initialized:
+            raise MinimaError("Fader not initialized")
+
+        cdef lib.ma_uint64 frame_count = len(data) // (self._channels * sizeof(float))
+        cdef size_t data_len = len(data)
+        cdef float* output = <float*>malloc(data_len)
+
+        if output == NULL:
+            raise MemoryError("Failed to allocate buffer")
+
+        try:
+            lib.ma_fader_process_pcm_frames(&self._fader, output, <const void*>data, frame_count)
+            return bytes((<char*>output)[:data_len])
+        finally:
+            free(output)
+
+    @property
+    def current_volume(self) -> float:
+        """Get the current volume level."""
+        if not self._initialized:
+            return 0.0
+        return lib.ma_fader_get_current_volume(&self._fader)
+
+
+cdef class Gainer:
+    """
+    Gain control with smoothing to avoid clicks.
+
+    Example:
+        gainer = Gainer(channels=2)
+        gainer.set_gain(0.5)
+        output = gainer.process(input_data)
+    """
+    cdef lib.ma_gainer _gainer
+    cdef bint _initialized
+    cdef lib.ma_uint32 _channels
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, int channels=2, int smooth_time_in_frames=256):
+        """
+        Initialize a gainer.
+
+        Args:
+            channels: Number of channels
+            smooth_time_in_frames: Smoothing time in frames (higher = smoother transitions)
+        """
+        cdef lib.ma_gainer_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_gainer_config_init(channels, smooth_time_in_frames)
+        result = lib.ma_gainer_init(&config, NULL, &self._gainer)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize gainer (error {result})")
+
+        self._initialized = True
+        self._channels = channels
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_gainer_uninit(&self._gainer, NULL)
+            self._initialized = False
+
+    def set_gain(self, float gain):
+        """Set the gain for all channels."""
+        if not self._initialized:
+            raise MinimaError("Gainer not initialized")
+        lib.ma_gainer_set_gain(&self._gainer, gain)
+
+    def process(self, bytes data) -> bytes:
+        """Process audio data through the gainer."""
+        if not self._initialized:
+            raise MinimaError("Gainer not initialized")
+
+        cdef lib.ma_uint64 frame_count = len(data) // (self._channels * sizeof(float))
+        cdef size_t data_len = len(data)
+        cdef float* output = <float*>malloc(data_len)
+
+        if output == NULL:
+            raise MemoryError("Failed to allocate buffer")
+
+        try:
+            lib.ma_gainer_process_pcm_frames(&self._gainer, output, <const void*>data, frame_count)
+            return bytes((<char*>output)[:data_len])
+        finally:
+            free(output)
+
+    @property
+    def master_volume(self) -> float:
+        """Get the master volume."""
+        if not self._initialized:
+            return 0.0
+        cdef float volume = 0.0
+        lib.ma_gainer_get_master_volume(&self._gainer, &volume)
+        return volume
+
+    @master_volume.setter
+    def master_volume(self, float value):
+        if not self._initialized:
+            raise MinimaError("Gainer not initialized")
+        lib.ma_gainer_set_master_volume(&self._gainer, value)
+
+
+# -----------------------------------------------------------------------------
+# 3D Audio / Spatialization Classes
+# -----------------------------------------------------------------------------
+
+class Positioning(IntEnum):
+    """Positioning mode for spatializers."""
+    ABSOLUTE = 0
+    RELATIVE = 1
+
+
+cdef class SpatializerListener:
+    """
+    Listener for 3D audio spatialization.
+
+    Represents the position and orientation of the listener in 3D space.
+
+    Example:
+        listener = SpatializerListener(channels_out=2)
+        listener.set_position(0, 0, 0)
+        listener.set_direction(0, 0, -1)
+    """
+    cdef lib.ma_spatializer_listener _listener
+    cdef bint _initialized
+    cdef lib.ma_uint32 _channels_out
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, int channels_out=2):
+        """
+        Initialize a spatializer listener.
+
+        Args:
+            channels_out: Number of output channels
+        """
+        cdef lib.ma_spatializer_listener_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_spatializer_listener_config_init(channels_out)
+        result = lib.ma_spatializer_listener_init(&config, NULL, &self._listener)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize spatializer listener (error {result})")
+
+        self._initialized = True
+        self._channels_out = channels_out
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_spatializer_listener_uninit(&self._listener, NULL)
+            self._initialized = False
+
+    def set_position(self, float x, float y, float z):
+        """Set the listener position in 3D space."""
+        if not self._initialized:
+            raise MinimaError("Listener not initialized")
+        lib.ma_spatializer_listener_set_position(&self._listener, x, y, z)
+
+    def get_position(self) -> tuple:
+        """Get the listener position."""
+        if not self._initialized:
+            return (0.0, 0.0, 0.0)
+        cdef lib.ma_vec3f pos = lib.ma_spatializer_listener_get_position(&self._listener)
+        return (pos.x, pos.y, pos.z)
+
+    def set_direction(self, float x, float y, float z):
+        """Set the listener direction (forward vector)."""
+        if not self._initialized:
+            raise MinimaError("Listener not initialized")
+        lib.ma_spatializer_listener_set_direction(&self._listener, x, y, z)
+
+    def get_direction(self) -> tuple:
+        """Get the listener direction."""
+        if not self._initialized:
+            return (0.0, 0.0, -1.0)
+        cdef lib.ma_vec3f dir = lib.ma_spatializer_listener_get_direction(&self._listener)
+        return (dir.x, dir.y, dir.z)
+
+    def set_velocity(self, float x, float y, float z):
+        """Set the listener velocity (for doppler effect)."""
+        if not self._initialized:
+            raise MinimaError("Listener not initialized")
+        lib.ma_spatializer_listener_set_velocity(&self._listener, x, y, z)
+
+    def set_speed_of_sound(self, float speed):
+        """Set the speed of sound for doppler calculations."""
+        if not self._initialized:
+            raise MinimaError("Listener not initialized")
+        lib.ma_spatializer_listener_set_speed_of_sound(&self._listener, speed)
+
+    def set_cone(self, float inner_angle, float outer_angle, float outer_gain):
+        """
+        Set the listener cone for directional hearing.
+
+        Args:
+            inner_angle: Inner cone angle in radians
+            outer_angle: Outer cone angle in radians
+            outer_gain: Gain outside the outer cone
+        """
+        if not self._initialized:
+            raise MinimaError("Listener not initialized")
+        lib.ma_spatializer_listener_set_cone(&self._listener, inner_angle, outer_angle, outer_gain)
+
+
+cdef class Spatializer:
+    """
+    3D audio spatializer for positioning sounds in 3D space.
+
+    Example:
+        listener = SpatializerListener()
+        spatializer = Spatializer(channels_in=1, channels_out=2)
+        spatializer.set_position(5, 0, 0)  # Sound to the right
+        output = spatializer.process(listener, mono_input)
+    """
+    cdef lib.ma_spatializer _spatializer
+    cdef bint _initialized
+    cdef lib.ma_uint32 _channels_in
+    cdef lib.ma_uint32 _channels_out
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, int channels_in=1, int channels_out=2,
+                 int attenuation_model=AttenuationModel.INVERSE,
+                 float min_distance=1.0, float max_distance=100.0):
+        """
+        Initialize a spatializer.
+
+        Args:
+            channels_in: Number of input channels
+            channels_out: Number of output channels
+            attenuation_model: Distance attenuation model
+            min_distance: Minimum distance for attenuation
+            max_distance: Maximum distance for attenuation
+        """
+        cdef lib.ma_spatializer_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_spatializer_config_init(channels_in, channels_out)
+        config.attenuationModel = <lib.ma_attenuation_model>attenuation_model
+        config.minDistance = min_distance
+        config.maxDistance = max_distance
+
+        result = lib.ma_spatializer_init(&config, NULL, &self._spatializer)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize spatializer (error {result})")
+
+        self._initialized = True
+        self._channels_in = channels_in
+        self._channels_out = channels_out
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_spatializer_uninit(&self._spatializer, NULL)
+            self._initialized = False
+
+    def process(self, SpatializerListener listener, bytes data) -> bytes:
+        """
+        Process audio data through the spatializer.
+
+        Args:
+            listener: The listener for spatial calculations
+            data: Input audio data
+
+        Returns:
+            Spatialized audio data
+        """
+        if not self._initialized:
+            raise MinimaError("Spatializer not initialized")
+        if not listener._initialized:
+            raise MinimaError("Listener not initialized")
+
+        cdef lib.ma_uint64 frame_count = len(data) // (self._channels_in * sizeof(float))
+        cdef size_t output_size = frame_count * self._channels_out * sizeof(float)
+        cdef float* output = <float*>malloc(output_size)
+
+        if output == NULL:
+            raise MemoryError("Failed to allocate buffer")
+
+        try:
+            lib.ma_spatializer_process_pcm_frames(&self._spatializer,
+                &listener._listener, output, <const void*>data, frame_count)
+            return bytes((<char*>output)[:output_size])
+        finally:
+            free(output)
+
+    def set_position(self, float x, float y, float z):
+        """Set the sound source position in 3D space."""
+        if not self._initialized:
+            raise MinimaError("Spatializer not initialized")
+        lib.ma_spatializer_set_position(&self._spatializer, x, y, z)
+
+    def get_position(self) -> tuple:
+        """Get the sound source position."""
+        if not self._initialized:
+            return (0.0, 0.0, 0.0)
+        cdef lib.ma_vec3f pos = lib.ma_spatializer_get_position(&self._spatializer)
+        return (pos.x, pos.y, pos.z)
+
+    def set_direction(self, float x, float y, float z):
+        """Set the sound source direction."""
+        if not self._initialized:
+            raise MinimaError("Spatializer not initialized")
+        lib.ma_spatializer_set_direction(&self._spatializer, x, y, z)
+
+    def set_velocity(self, float x, float y, float z):
+        """Set the sound source velocity (for doppler effect)."""
+        if not self._initialized:
+            raise MinimaError("Spatializer not initialized")
+        lib.ma_spatializer_set_velocity(&self._spatializer, x, y, z)
+
+    @property
+    def min_distance(self) -> float:
+        """Minimum distance for attenuation."""
+        return lib.ma_spatializer_get_min_distance(&self._spatializer)
+
+    @min_distance.setter
+    def min_distance(self, float value):
+        lib.ma_spatializer_set_min_distance(&self._spatializer, value)
+
+    @property
+    def max_distance(self) -> float:
+        """Maximum distance for attenuation."""
+        return lib.ma_spatializer_get_max_distance(&self._spatializer)
+
+    @max_distance.setter
+    def max_distance(self, float value):
+        lib.ma_spatializer_set_max_distance(&self._spatializer, value)
+
+    @property
+    def rolloff(self) -> float:
+        """Rolloff factor for distance attenuation."""
+        return lib.ma_spatializer_get_rolloff(&self._spatializer)
+
+    @rolloff.setter
+    def rolloff(self, float value):
+        lib.ma_spatializer_set_rolloff(&self._spatializer, value)
+
+    @property
+    def doppler_factor(self) -> float:
+        """Doppler effect factor (0 = disabled)."""
+        return lib.ma_spatializer_get_doppler_factor(&self._spatializer)
+
+    @doppler_factor.setter
+    def doppler_factor(self, float value):
+        lib.ma_spatializer_set_doppler_factor(&self._spatializer, value)
+
+    @property
+    def attenuation_model(self) -> int:
+        """Distance attenuation model."""
+        return lib.ma_spatializer_get_attenuation_model(&self._spatializer)
+
+    @attenuation_model.setter
+    def attenuation_model(self, int value):
+        lib.ma_spatializer_set_attenuation_model(&self._spatializer, <lib.ma_attenuation_model>value)
+
+
+# -----------------------------------------------------------------------------
+# Audio Buffer Classes
+# -----------------------------------------------------------------------------
+
+cdef class AudioBuffer:
+    """
+    In-memory audio buffer for procedural or dynamic audio.
+
+    Example:
+        buffer = AudioBuffer(data, channels=2)
+        frames = buffer.read(1024)
+    """
+    cdef lib.ma_audio_buffer _buffer
+    cdef bint _initialized
+    cdef lib.ma_uint32 _channels
+    cdef lib.ma_format _format
+    cdef bytes _data  # Keep reference to prevent GC
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, bytes data, int channels=2, int format=Format.F32):
+        """
+        Initialize an audio buffer with data.
+
+        Args:
+            data: Audio data (PCM samples)
+            channels: Number of channels
+            format: Sample format
+        """
+        cdef lib.ma_audio_buffer_config config
+        cdef lib.ma_result result
+
+        # Calculate bytes per sample
+        cdef int bytes_per_sample = 4
+        if format == lib.ma_format_u8:
+            bytes_per_sample = 1
+        elif format == lib.ma_format_s16:
+            bytes_per_sample = 2
+        elif format == lib.ma_format_s24:
+            bytes_per_sample = 3
+
+        cdef lib.ma_uint64 size_in_frames = len(data) // (channels * bytes_per_sample)
+
+        self._data = data  # Keep reference
+        config = lib.ma_audio_buffer_config_init(
+            <lib.ma_format>format, channels, size_in_frames, <const void*>data, NULL
+        )
+
+        result = lib.ma_audio_buffer_init(&config, &self._buffer)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize audio buffer (error {result})")
+
+        self._initialized = True
+        self._channels = channels
+        self._format = <lib.ma_format>format
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_audio_buffer_uninit(&self._buffer)
+            self._initialized = False
+
+    def read(self, lib.ma_uint64 frame_count, bint loop=False) -> bytes:
+        """
+        Read frames from the buffer.
+
+        Args:
+            frame_count: Number of frames to read
+            loop: Whether to loop back to start when reaching end
+
+        Returns:
+            Audio data
+        """
+        if not self._initialized:
+            raise MinimaError("Audio buffer not initialized")
+
+        cdef int bytes_per_sample = 4
+        if self._format == lib.ma_format_u8:
+            bytes_per_sample = 1
+        elif self._format == lib.ma_format_s16:
+            bytes_per_sample = 2
+        elif self._format == lib.ma_format_s24:
+            bytes_per_sample = 3
+
+        cdef size_t buffer_size = frame_count * self._channels * bytes_per_sample
+        cdef void* buffer = malloc(buffer_size)
+
+        if buffer == NULL:
+            raise MemoryError("Failed to allocate buffer")
+
+        cdef lib.ma_uint64 frames_read
+        try:
+            frames_read = lib.ma_audio_buffer_read_pcm_frames(&self._buffer, buffer, frame_count, loop)
+            return bytes((<char*>buffer)[:frames_read * self._channels * bytes_per_sample])
+        finally:
+            free(buffer)
+
+    def seek(self, lib.ma_uint64 frame_index):
+        """Seek to a specific frame position."""
+        if not self._initialized:
+            raise MinimaError("Audio buffer not initialized")
+        cdef lib.ma_result result = lib.ma_audio_buffer_seek_to_pcm_frame(&self._buffer, frame_index)
+        _check_result(result)
+
+    @property
+    def cursor(self) -> int:
+        """Current read position in frames."""
+        if not self._initialized:
+            return 0
+        cdef lib.ma_uint64 cursor = 0
+        lib.ma_audio_buffer_get_cursor_in_pcm_frames(&self._buffer, &cursor)
+        return cursor
+
+    @property
+    def length(self) -> int:
+        """Total length in frames."""
+        if not self._initialized:
+            return 0
+        cdef lib.ma_uint64 length = 0
+        lib.ma_audio_buffer_get_length_in_pcm_frames(&self._buffer, &length)
+        return length
+
+    @property
+    def at_end(self) -> bool:
+        """Whether the read cursor is at the end."""
+        if not self._initialized:
+            return True
+        return lib.ma_audio_buffer_at_end(&self._buffer)
+
+    @property
+    def available_frames(self) -> int:
+        """Number of frames available to read."""
+        if not self._initialized:
+            return 0
+        cdef lib.ma_uint64 available = 0
+        lib.ma_audio_buffer_get_available_frames(&self._buffer, &available)
+        return available
+
+
+# -----------------------------------------------------------------------------
+# Additional Node Graph Nodes
+# -----------------------------------------------------------------------------
+
+cdef class NotchNode:
+    """
+    Notch filter node for node graphs.
+
+    Example:
+        graph = NodeGraph(channels=2)
+        notch = NotchNode(graph, frequency=60.0, q=10.0)  # Remove 60Hz hum
+    """
+    cdef lib.ma_notch_node _node
+    cdef bint _initialized
+    cdef NodeGraph _graph
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, NodeGraph graph, double frequency, double q=1.0,
+                 int channels=2, int sample_rate=48000):
+        """
+        Initialize a notch filter node.
+
+        Args:
+            graph: Parent node graph
+            frequency: Notch frequency in Hz
+            q: Q factor (higher = narrower notch)
+            channels: Number of channels
+            sample_rate: Sample rate in Hz
+        """
+        cdef lib.ma_notch_node_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_notch_node_config_init(channels, sample_rate, q, frequency)
+        result = lib.ma_notch_node_init(graph._get_graph(), &config, NULL, &self._node)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize notch node (error {result})")
+
+        self._initialized = True
+        self._graph = graph
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_notch_node_uninit(&self._node, NULL)
+            self._initialized = False
+
+    @property
+    def state(self) -> int:
+        """Node state."""
+        if not self._initialized:
+            return 0
+        return lib.ma_node_get_state(<lib.ma_node*>&self._node)
+
+
+cdef class PeakNode:
+    """
+    Peaking EQ node for node graphs.
+
+    Example:
+        graph = NodeGraph(channels=2)
+        peak = PeakNode(graph, frequency=1000.0, gain_db=6.0)
+    """
+    cdef lib.ma_peak_node _node
+    cdef bint _initialized
+    cdef NodeGraph _graph
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, NodeGraph graph, double frequency, double gain_db=0.0,
+                 double q=1.0, int channels=2, int sample_rate=48000):
+        """
+        Initialize a peak EQ node.
+
+        Args:
+            graph: Parent node graph
+            frequency: Center frequency in Hz
+            gain_db: Gain in decibels
+            q: Q factor
+            channels: Number of channels
+            sample_rate: Sample rate in Hz
+        """
+        cdef lib.ma_peak_node_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_peak_node_config_init(channels, sample_rate, gain_db, q, frequency)
+        result = lib.ma_peak_node_init(graph._get_graph(), &config, NULL, &self._node)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize peak node (error {result})")
+
+        self._initialized = True
+        self._graph = graph
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_peak_node_uninit(&self._node, NULL)
+            self._initialized = False
+
+    @property
+    def state(self) -> int:
+        """Node state."""
+        if not self._initialized:
+            return 0
+        return lib.ma_node_get_state(<lib.ma_node*>&self._node)
+
+
+cdef class LoShelfNode:
+    """
+    Low shelf filter node for node graphs.
+
+    Example:
+        graph = NodeGraph(channels=2)
+        loshelf = LoShelfNode(graph, frequency=200.0, gain_db=3.0)
+    """
+    cdef lib.ma_loshelf_node _node
+    cdef bint _initialized
+    cdef NodeGraph _graph
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, NodeGraph graph, double frequency, double gain_db=0.0,
+                 double shelf_slope=1.0, int channels=2, int sample_rate=48000):
+        """
+        Initialize a low shelf node.
+
+        Args:
+            graph: Parent node graph
+            frequency: Shelf frequency in Hz
+            gain_db: Gain in decibels
+            shelf_slope: Shelf slope
+            channels: Number of channels
+            sample_rate: Sample rate in Hz
+        """
+        cdef lib.ma_loshelf_node_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_loshelf_node_config_init(channels, sample_rate, gain_db, shelf_slope, frequency)
+        result = lib.ma_loshelf_node_init(graph._get_graph(), &config, NULL, &self._node)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize low shelf node (error {result})")
+
+        self._initialized = True
+        self._graph = graph
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_loshelf_node_uninit(&self._node, NULL)
+            self._initialized = False
+
+    @property
+    def state(self) -> int:
+        """Node state."""
+        if not self._initialized:
+            return 0
+        return lib.ma_node_get_state(<lib.ma_node*>&self._node)
+
+
+cdef class HiShelfNode:
+    """
+    High shelf filter node for node graphs.
+
+    Example:
+        graph = NodeGraph(channels=2)
+        hishelf = HiShelfNode(graph, frequency=8000.0, gain_db=-3.0)
+    """
+    cdef lib.ma_hishelf_node _node
+    cdef bint _initialized
+    cdef NodeGraph _graph
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, NodeGraph graph, double frequency, double gain_db=0.0,
+                 double shelf_slope=1.0, int channels=2, int sample_rate=48000):
+        """
+        Initialize a high shelf node.
+
+        Args:
+            graph: Parent node graph
+            frequency: Shelf frequency in Hz
+            gain_db: Gain in decibels
+            shelf_slope: Shelf slope
+            channels: Number of channels
+            sample_rate: Sample rate in Hz
+        """
+        cdef lib.ma_hishelf_node_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_hishelf_node_config_init(channels, sample_rate, gain_db, shelf_slope, frequency)
+        result = lib.ma_hishelf_node_init(graph._get_graph(), &config, NULL, &self._node)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize high shelf node (error {result})")
+
+        self._initialized = True
+        self._graph = graph
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_hishelf_node_uninit(&self._node, NULL)
+            self._initialized = False
+
+    @property
+    def state(self) -> int:
+        """Node state."""
+        if not self._initialized:
+            return 0
+        return lib.ma_node_get_state(<lib.ma_node*>&self._node)
+
+
+cdef class BiquadNode:
+    """
+    Generic biquad filter node for node graphs.
+
+    Example:
+        graph = NodeGraph(channels=2)
+        biquad = BiquadNode(graph, b0=1.0, b1=0.0, b2=0.0, a0=1.0, a1=0.0, a2=0.0)
+    """
+    cdef lib.ma_biquad_node _node
+    cdef bint _initialized
+    cdef NodeGraph _graph
+
+    def __cinit__(self):
+        self._initialized = False
+
+    def __init__(self, NodeGraph graph, float b0, float b1, float b2,
+                 float a0, float a1, float a2, int channels=2):
+        """
+        Initialize a biquad filter node.
+
+        Args:
+            graph: Parent node graph
+            b0, b1, b2: Feedforward coefficients
+            a0, a1, a2: Feedback coefficients
+            channels: Number of channels
+        """
+        cdef lib.ma_biquad_node_config config
+        cdef lib.ma_result result
+
+        config = lib.ma_biquad_node_config_init(channels, b0, b1, b2, a0, a1, a2)
+        result = lib.ma_biquad_node_init(graph._get_graph(), &config, NULL, &self._node)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize biquad node (error {result})")
+
+        self._initialized = True
+        self._graph = graph
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_biquad_node_uninit(&self._node, NULL)
+            self._initialized = False
+
+    @property
+    def state(self) -> int:
+        """Node state."""
+        if not self._initialized:
+            return 0
+        return lib.ma_node_get_state(<lib.ma_node*>&self._node)
+
+
+# -----------------------------------------------------------------------------
 # Legacy compatibility functions
 # -----------------------------------------------------------------------------
 
