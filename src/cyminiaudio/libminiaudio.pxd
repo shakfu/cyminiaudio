@@ -2,14 +2,26 @@
 from libc.stddef cimport wchar_t
 
 
-cdef extern from "<pthread.h>" nogil:
-    # see: https://github.com/python-llfuse/python-llfuse/blob/master/Include/pthread.pxd
-    ctypedef unsigned long int pthread_t
-
-    ctypedef union pthread_mutex_t:
+# Platform-agnostic opaque threading types (not accessed from Python)
+cdef extern from *:
+    """
+    #ifdef _WIN32
+        #include <windows.h>
+        typedef HANDLE ma_pthread_t;
+        typedef CRITICAL_SECTION ma_pthread_mutex_t;
+        typedef HANDLE ma_pthread_cond_t;
+    #else
+        #include <pthread.h>
+        typedef pthread_t ma_pthread_t;
+        typedef pthread_mutex_t ma_pthread_mutex_t;
+        typedef pthread_cond_t ma_pthread_cond_t;
+    #endif
+    """
+    ctypedef struct ma_pthread_t:
         pass
-
-    ctypedef union pthread_cond_t:
+    ctypedef struct ma_pthread_mutex_t:
+        pass
+    ctypedef struct ma_pthread_cond_t:
         pass
 
 
@@ -236,19 +248,19 @@ cdef extern from "miniaudio.h":
 
     ctypedef ma_uint32 ma_spinlock
 
-    ctypedef pthread_t ma_thread
+    ctypedef ma_pthread_t ma_thread
 
-    ctypedef pthread_mutex_t ma_mutex
+    ctypedef ma_pthread_mutex_t ma_mutex
 
     ctypedef struct ma_event:
         ma_uint32 value
-        pthread_mutex_t lock
-        pthread_cond_t cond
+        ma_pthread_mutex_t lock
+        ma_pthread_cond_t cond
 
     ctypedef struct ma_semaphore:
         int value
-        pthread_mutex_t lock
-        pthread_cond_t cond
+        ma_pthread_mutex_t lock
+        ma_pthread_cond_t cond
 
 # -----------------------------------------------------------
 # get version funcs

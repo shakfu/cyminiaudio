@@ -25,6 +25,7 @@ add_custom_command(
 add_library(miniaudio STATIC
     ${MINIAUDIO_DIR}/miniaudio.c
 )
+set_target_properties(miniaudio PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(miniaudio PUBLIC
     ${MINIAUDIO_DIR}
 )
