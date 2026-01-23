@@ -37,6 +37,9 @@ format:
 typecheck:
 	uv run mypy src/cyminiaudio/__init__.py tests/ --exclude '.venv'
 
+# Run a full quality assurance check
+qa: test lint typecheck format
+
 # Build wheel
 wheel:
 	uv build --wheel

@@ -21,10 +21,7 @@ Status of miniaudio 0.11.24 API bindings in cyminiaudio.
 ### Buffers
 - [x] `ma_audio_buffer` - In-memory audio buffer for procedural/dynamic audio (AudioBuffer)
 - [x] `ma_audio_buffer_ref` - Non-owning reference to audio buffer (AudioBufferRef)
-
-### Low-Level Device Access
-- [x] `ma_device` - Direct device access (bypassing Engine) (Device)
-- [x] `ma_context` - Device context for enumeration and configuration (Context)
+- [x] `ma_paged_audio_buffer` - Large audio buffer with paged memory (PagedAudioBuffer)
 
 ### Additional Node Graph Nodes
 - [x] `ma_notch_node` - Notch filter as graph node (NotchNode)
@@ -46,15 +43,16 @@ Status of miniaudio 0.11.24 API bindings in cyminiaudio.
 - [x] `ma_apply_volume_factor_pcm_frames_f32` - Apply volume to f32 in-place (apply_volume_factor_pcm_frames_f32)
 - [x] `ma_copy_and_apply_volume_factor_pcm_frames_f32` - Copy and apply volume to f32 (copy_and_apply_volume_factor_pcm_frames_f32)
 
-## Remaining (Advanced/Niche)
-
-### Buffers
-- [ ] `ma_paged_audio_buffer` - Large audio buffer with paged memory
-
 ### Low-Level Device Access
-- [ ] `ma_device_config` - Detailed device configuration options
-- [ ] Duplex mode - Simultaneous playback and capture
+- [x] `ma_device` - Direct device access (bypassing Engine) (Device)
+- [x] `ma_context` - Device context for enumeration and configuration (Context)
+- [x] `ma_device_config` - Device configuration options: period_size_frames, period_size_ms, periods
+- [x] Duplex mode - Supported via `Device(device_type=DeviceType.DUPLEX)`
 
-### Miscellaneous
-- [ ] `ma_slot_allocator` - Efficient slot-based allocation
-- [ ] Custom decoding backends - Support for additional codecs
+## Not Planned
+
+These items are internal utilities or require C callbacks that are difficult to expose in Python:
+
+- `ma_slot_allocator` - Internal memory allocation utility (not useful for Python)
+- Custom decoding backends - Requires C callbacks, complex to implement in Cython
+- Specific device ID selection - Requires exposing ma_device_id which is backend-specific

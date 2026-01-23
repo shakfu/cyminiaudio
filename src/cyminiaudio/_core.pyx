@@ -4911,6 +4911,185 @@ cdef class AudioBufferRef:
         return available
 
 
+cdef class PagedAudioBuffer:
+    """
+    Large audio buffer with paged memory management.
+
+    Useful for streaming or recording large amounts of audio without
+    requiring contiguous memory allocation.
+
+    Example:
+        buffer = PagedAudioBuffer(channels=2)
+        buffer.append_page(audio_data)
+        buffer.append_page(more_audio_data)
+        frames = buffer.read(1024)
+    """
+    cdef lib.ma_paged_audio_buffer _buffer
+    cdef lib.ma_paged_audio_buffer_data _data
+    cdef bint _initialized
+    cdef bint _data_initialized
+    cdef lib.ma_uint32 _channels
+    cdef lib.ma_format _format
+
+    def __cinit__(self):
+        self._initialized = False
+        self._data_initialized = False
+
+    def __init__(self, int channels=2, int format=Format.F32):
+        """
+        Initialize a paged audio buffer.
+
+        Args:
+            channels: Number of channels
+            format: Sample format
+        """
+        cdef lib.ma_result result
+        cdef lib.ma_paged_audio_buffer_config config
+
+        # Initialize the data structure first
+        result = lib.ma_paged_audio_buffer_data_init(<lib.ma_format>format, channels, &self._data)
+        if result != lib.MA_SUCCESS:
+            raise MinimaError(f"Failed to initialize paged audio buffer data (error {result})")
+        self._data_initialized = True
+
+        # Initialize the buffer
+        config = lib.ma_paged_audio_buffer_config_init(&self._data)
+        result = lib.ma_paged_audio_buffer_init(&config, &self._buffer)
+        if result != lib.MA_SUCCESS:
+            lib.ma_paged_audio_buffer_data_uninit(&self._data, NULL)
+            self._data_initialized = False
+            raise MinimaError(f"Failed to initialize paged audio buffer (error {result})")
+
+        self._initialized = True
+        self._channels = channels
+        self._format = <lib.ma_format>format
+
+    def __dealloc__(self):
+        if self._initialized:
+            lib.ma_paged_audio_buffer_uninit(&self._buffer)
+            self._initialized = False
+        if self._data_initialized:
+            lib.ma_paged_audio_buffer_data_uninit(&self._data, NULL)
+            self._data_initialized = False
+
+    def append_page(self, bytes data):
+        """
+        Append a page of audio data to the buffer.
+
+        Args:
+            data: Audio data (PCM samples)
+        """
+        if not self._initialized:
+            raise MinimaError("Paged audio buffer not initialized")
+
+        cdef int bytes_per_sample = 4
+        if self._format == lib.ma_format_u8:
+            bytes_per_sample = 1
+        elif self._format == lib.ma_format_s16:
+            bytes_per_sample = 2
+        elif self._format == lib.ma_format_s24:
+            bytes_per_sample = 3
+
+        cdef lib.ma_uint32 page_size_in_frames = len(data) // (self._channels * bytes_per_sample)
+        cdef const char* data_ptr = <const char*>data
+
+        cdef lib.ma_result result = lib.ma_paged_audio_buffer_data_allocate_and_append_page(
+            &self._data, page_size_in_frames, <const void*>data_ptr, NULL
+        )
+        _check_result(result)
+
+    def read(self, int frame_count) -> bytes:
+        """
+        Read frames from the buffer.
+
+        Args:
+            frame_count: Number of frames to read
+
+        Returns:
+            Audio data as bytes
+        """
+        if not self._initialized:
+            raise MinimaError("Paged audio buffer not initialized")
+
+        cdef int bytes_per_sample = 4
+        if self._format == lib.ma_format_u8:
+            bytes_per_sample = 1
+        elif self._format == lib.ma_format_s16:
+            bytes_per_sample = 2
+        elif self._format == lib.ma_format_s24:
+            bytes_per_sample = 3
+
+        cdef size_t buffer_size = frame_count * self._channels * bytes_per_sample
+        cdef void* output = malloc(buffer_size)
+        if output == NULL:
+            raise MemoryError("Failed to allocate buffer")
+
+        cdef lib.ma_uint64 frames_read = 0
+        cdef size_t bytes_read
+        try:
+            lib.ma_paged_audio_buffer_read_pcm_frames(&self._buffer, output, frame_count, &frames_read)
+            bytes_read = frames_read * self._channels * bytes_per_sample
+            return bytes((<char*>output)[:bytes_read])
+        finally:
+            free(output)
+
+    def seek(self, lib.ma_uint64 frame_index):
+        """
+        Seek to a specific frame position.
+
+        Args:
+            frame_index: Frame position to seek to
+        """
+        if not self._initialized:
+            raise MinimaError("Paged audio buffer not initialized")
+        cdef lib.ma_result result = lib.ma_paged_audio_buffer_seek_to_pcm_frame(&self._buffer, frame_index)
+        _check_result(result)
+
+    def close(self):
+        """Close the buffer and release resources."""
+        if self._initialized:
+            lib.ma_paged_audio_buffer_uninit(&self._buffer)
+            self._initialized = False
+        if self._data_initialized:
+            lib.ma_paged_audio_buffer_data_uninit(&self._data, NULL)
+            self._data_initialized = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
+    @property
+    def cursor(self) -> int:
+        """Current read position in frames."""
+        if not self._initialized:
+            return 0
+        cdef lib.ma_uint64 cursor = 0
+        lib.ma_paged_audio_buffer_get_cursor_in_pcm_frames(&self._buffer, &cursor)
+        return cursor
+
+    @property
+    def length(self) -> int:
+        """Total length in frames."""
+        if not self._initialized:
+            return 0
+        cdef lib.ma_uint64 length = 0
+        lib.ma_paged_audio_buffer_get_length_in_pcm_frames(&self._buffer, &length)
+        return length
+
+    @property
+    def channels(self) -> int:
+        """Number of channels."""
+        return self._channels
+
+    @property
+    def format(self) -> int:
+        """Sample format."""
+        return self._format
+
+
 # -----------------------------------------------------------------------------
 # Low-Level Device Access
 # -----------------------------------------------------------------------------
@@ -4944,7 +5123,8 @@ cdef class Device:
         self._initialized = False
 
     def __init__(self, int device_type=DeviceType.PLAYBACK,
-                 int channels=2, int sample_rate=48000, int format=Format.F32):
+                 int channels=2, int sample_rate=48000, int format=Format.F32,
+                 int period_size_frames=0, int period_size_ms=0, int periods=0):
         """
         Initialize a device.
 
@@ -4953,12 +5133,24 @@ cdef class Device:
             channels: Number of channels
             sample_rate: Sample rate in Hz
             format: Sample format
+            period_size_frames: Period size in frames (0 = default)
+            period_size_ms: Period size in milliseconds (0 = default, overrides period_size_frames)
+            periods: Number of periods/buffers (0 = default)
         """
         cdef lib.ma_device_config config
         cdef lib.ma_result result
 
         config = lib.ma_device_config_init(<lib.ma_device_type>device_type)
         config.sampleRate = sample_rate
+
+        # Set period size
+        if period_size_ms > 0:
+            config.periodSizeInMilliseconds = period_size_ms
+        elif period_size_frames > 0:
+            config.periodSizeInFrames = period_size_frames
+
+        if periods > 0:
+            config.periods = periods
 
         if device_type == lib.ma_device_type_playback or device_type == lib.ma_device_type_duplex:
             config.playback.format = <lib.ma_format>format

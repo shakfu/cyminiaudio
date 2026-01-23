@@ -250,7 +250,11 @@ class TestNoise:
 
     def test_noise_types(self):
         """Test different noise types."""
-        for ntype in [cyminiaudio.NoiseType.WHITE, cyminiaudio.NoiseType.PINK, cyminiaudio.NoiseType.BROWNIAN]:
+        for ntype in [
+            cyminiaudio.NoiseType.WHITE,
+            cyminiaudio.NoiseType.PINK,
+            cyminiaudio.NoiseType.BROWNIAN,
+        ]:
             noise = cyminiaudio.Noise(noise_type=ntype)
             assert noise.noise_type == ntype
 
@@ -627,16 +631,16 @@ class TestDataConversion:
         converter = cyminiaudio.DataConverter(
             format_in=cyminiaudio.Format.F32,
             format_out=cyminiaudio.Format.F32,
-            channels_in=2, channels_out=2,
-            sample_rate_in=44100, sample_rate_out=48000
+            channels_in=2,
+            channels_out=2,
+            sample_rate_in=44100,
+            sample_rate_out=48000,
         )
-        # Should not raise
+        assert converter is not None
 
     def test_data_converter_process(self):
         """Test data converter processing."""
-        converter = cyminiaudio.DataConverter(
-            sample_rate_in=44100, sample_rate_out=48000
-        )
+        converter = cyminiaudio.DataConverter(sample_rate_in=44100, sample_rate_out=48000)
         waveform = cyminiaudio.Waveform(frequency=440.0)
         data = waveform.read(1024)
         output = converter.process(data)
@@ -683,7 +687,7 @@ class TestVolumePanning:
     def test_gainer_init(self):
         """Test gainer initialization."""
         gainer = cyminiaudio.Gainer(channels=2)
-        # Should not raise
+        assert gainer is not None
 
     def test_gainer_process(self):
         """Test gainer processing."""
@@ -811,6 +815,66 @@ class TestAudioBufferRef:
         assert ref.length == 1024
 
 
+class TestPagedAudioBuffer:
+    """Test paged audio buffer class."""
+
+    def test_paged_audio_buffer_init(self):
+        """Test paged audio buffer initialization."""
+        buffer = cyminiaudio.PagedAudioBuffer(channels=2)
+        assert buffer.channels == 2
+        assert buffer.length == 0
+        buffer.close()
+
+    def test_paged_audio_buffer_context_manager(self):
+        """Test paged audio buffer as context manager."""
+        with cyminiaudio.PagedAudioBuffer(channels=2) as buffer:
+            assert buffer.channels == 2
+
+    def test_paged_audio_buffer_append_and_read(self):
+        """Test appending pages and reading."""
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        with cyminiaudio.PagedAudioBuffer(channels=2) as buffer:
+            # Append some pages
+            data1 = waveform.read(512)
+            data2 = waveform.read(512)
+            buffer.append_page(data1)
+            buffer.append_page(data2)
+
+            # Check length
+            assert buffer.length == 1024
+
+            # Read back
+            output = buffer.read(256)
+            assert len(output) > 0
+            assert buffer.cursor == 256
+
+    def test_paged_audio_buffer_seek(self):
+        """Test seeking in paged buffer."""
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        with cyminiaudio.PagedAudioBuffer(channels=2) as buffer:
+            data = waveform.read(1024)
+            buffer.append_page(data)
+
+            # Read some
+            buffer.read(256)
+            assert buffer.cursor == 256
+
+            # Seek back to start
+            buffer.seek(0)
+            assert buffer.cursor == 0
+
+    def test_paged_audio_buffer_multiple_pages(self):
+        """Test multiple page operations."""
+        waveform = cyminiaudio.Waveform(frequency=440.0)
+        with cyminiaudio.PagedAudioBuffer(channels=2) as buffer:
+            # Append multiple pages
+            for _ in range(5):
+                data = waveform.read(256)
+                buffer.append_page(data)
+
+            assert buffer.length == 1280  # 5 * 256
+
+
 class TestLowLevelDevice:
     """Test low-level device access."""
 
@@ -831,6 +895,18 @@ class TestLowLevelDevice:
         with cyminiaudio.Device() as device:
             assert device.sample_rate > 0
             assert len(device.name) > 0
+
+    def test_device_with_period_config(self):
+        """Test device with period size configuration."""
+        # Test with period size in milliseconds
+        with cyminiaudio.Device(period_size_ms=20) as device:
+            assert device.sample_rate > 0
+
+    def test_device_duplex_mode(self):
+        """Test duplex device initialization."""
+        device = cyminiaudio.Device(device_type=cyminiaudio.DeviceType.DUPLEX)
+        assert device.device_type == cyminiaudio.DeviceType.DUPLEX
+        device.close()
 
     def test_context_init(self):
         """Test context initialization."""
@@ -937,7 +1013,8 @@ class TestVolumeUtilities:
         result = cyminiaudio.apply_volume_factor_pcm_frames(data, 0.0)
         # All samples should be zero
         import struct
-        samples = struct.unpack(f'{len(result)//4}f', result)
+
+        samples = struct.unpack(f"{len(result) // 4}f", result)
         assert all(s == 0.0 for s in samples)
 
     def test_copy_and_apply_volume_factor_pcm_frames(self):
