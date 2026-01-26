@@ -19,21 +19,17 @@ sync:
 build:
 	@uv sync --reinstall-package cyminiaudio
 
-# Alias for build
-rebuild: build
-
 # Run tests
 test:
 	@uv run pytest tests/ -v
 
 # Lint with ruff
 lint:
-	@uv run ruff check src/ tests/
+	@uv run ruff check --fix src/ tests/
 
 # Format with ruff
 format:
 	@uv run ruff format src/ tests/
-	@uv run ruff check --fix src/ tests/
 
 # Type check with mypy
 typecheck:
