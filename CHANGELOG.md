@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Changed
+- Audio tests were skipped on Linux, so the rules are now changed to:
+                                                                                
+  1. Auto-skip if `-s` is not provided (with message: "Audio tests require -s flag")
+  2. Run when both conditions are met: `RUN_AUDIO_TESTS=1` and `-s`
+  
+  Usage:
+  ```sh
+  # Without -s: audio tests auto-skip                                           
+  RUN_AUDIO_TESTS=1 uv run pytest tests/test_minima.py -k "play"                
+                                                                                
+  # With -s: audio tests run                                                    
+  RUN_AUDIO_TESTS=1 uv run pytest tests/test_minima.py -k "play" -s  
+  ```
+
 ## [0.1.1]
 
 ### Added

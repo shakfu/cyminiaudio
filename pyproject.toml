@@ -6,10 +6,7 @@ readme = "README.md"
 license = "Unlicense"
 requires-python = ">=3.9"
 authors = [
-    { name = "Your Name", email = "your.email@example.com" }
-]
-maintainers = [
-    { name = "Your Name", email = "your.email@example.com" }
+    { name = "Shakeeb Alireza", email = "shakfu@users.noreply.github.com" }
 ]
 keywords = [
     "audio",
@@ -93,6 +90,9 @@ wheel.exclude = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "audio: mark test as interactive audio test (requires -s flag)",
+]
 
 [dependency-groups]
 dev = [

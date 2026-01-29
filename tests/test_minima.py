@@ -1,5 +1,7 @@
 """Tests for cyminiaudio audio library."""
 
+import os
+
 import pytest
 
 import cyminiaudio
@@ -1075,17 +1077,20 @@ class TestAdditionalNodes:
 
 
 # Interactive tests - require user input, skip in automated runs
-@pytest.mark.skip(reason="Interactive: requires user input")
+@pytest.mark.audio
+@pytest.mark.skipif(os.environ.get("RUN_AUDIO_TESTS") != "1", reason="Interactive: set RUN_AUDIO_TESTS=1 to run")
 def test_play_sine():
     cyminiaudio.play_sine()
 
 
-@pytest.mark.skip(reason="Interactive: requires user input")
+@pytest.mark.audio
+@pytest.mark.skipif(os.environ.get("RUN_AUDIO_TESTS") != "1", reason="Interactive: set RUN_AUDIO_TESTS=1 to run")
 def test_play_file():
     cyminiaudio.play_file(SOUNDFILE)
 
 
-@pytest.mark.skip(reason="Interactive: requires user input")
+@pytest.mark.audio
+@pytest.mark.skipif(os.environ.get("RUN_AUDIO_TESTS") != "1", reason="Interactive: set RUN_AUDIO_TESTS=1 to run")
 def test_engine_play_file():
     cyminiaudio.engine_play_file(SOUNDFILE)
 
