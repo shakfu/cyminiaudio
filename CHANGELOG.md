@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Minimum Python version raised to 3.10 (was 3.9); updated ruff target-version, classifiers, cibuildwheel config, and Makefile release target accordingly
 - Added Python 3.14 to cibuildwheel build matrix
 - CMake minimum version raised to 3.17 (for WITH_SOABI support)
+- Renamed test file from `test_minima.py` to `test_cyminiaudio.py`
 
 #### Error Handling
 - Wrapped 55 previously unchecked `ma_result` return values with `_check_result()` across Engine, Sound, Waveform, Noise, Decoder, Encoder, filters, delay, ring buffers, data conversion, node graph, and resource manager

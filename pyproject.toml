@@ -90,6 +90,9 @@ wheel.exclude = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "audio: mark test as interactive audio test (requires -s flag)",
+]
 
 [dependency-groups]
 dev = [
@@ -136,7 +139,7 @@ exclude = [
 ]
 
 [[tool.mypy.overrides]]
-module = "test_cyminiaudio"
+module = ["test_cyminiaudio", "conftest"]
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 

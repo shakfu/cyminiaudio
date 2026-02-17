@@ -1,5 +1,7 @@
 """Tests for cyminiaudio audio library."""
 
+import os
+
 import pytest
 
 import cyminiaudio
@@ -417,7 +419,6 @@ class TestEncoder:
 
     def test_encoder_init(self):
         """Test encoder initialization."""
-        import os
         import tempfile
 
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
@@ -434,7 +435,6 @@ class TestEncoder:
 
     def test_encoder_write(self):
         """Test encoder writing."""
-        import os
         import tempfile
 
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
@@ -456,7 +456,6 @@ class TestEncoder:
 
     def test_encoder_context_manager(self):
         """Test encoder as context manager."""
-        import os
         import tempfile
 
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
@@ -474,7 +473,6 @@ class TestEncoder:
 
     def test_encoder_roundtrip(self):
         """Test encode then decode roundtrip preserves audio data."""
-        import os
         import struct
         import tempfile
 
@@ -1144,7 +1142,6 @@ class TestIntegration:
 
     def test_waveform_encode_decode_filter(self):
         """Test waveform -> encode -> decode -> filter pipeline."""
-        import os
         import struct
         import tempfile
 
@@ -1455,7 +1452,6 @@ class TestConcurrency:
 
     def test_parallel_encode_decode(self):
         """Test concurrent encode and decode operations."""
-        import os
         import tempfile
         import threading
 
