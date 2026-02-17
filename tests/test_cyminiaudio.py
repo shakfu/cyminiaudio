@@ -472,6 +472,54 @@ class TestEncoder:
             if os.path.exists(path):
                 os.unlink(path)
 
+    def test_encoder_roundtrip(self):
+        """Test encode then decode roundtrip preserves audio data."""
+        import os
+        import struct
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            path = f.name
+
+        channels = 2
+        sample_rate = 48000
+        num_frames = 4096
+
+        try:
+            # Generate and encode waveform data
+            with cyminiaudio.Encoder(path, channels=channels, sample_rate=sample_rate) as encoder:
+                waveform = cyminiaudio.Waveform(
+                    waveform_type=cyminiaudio.WaveformType.SINE,
+                    frequency=440.0,
+                    channels=channels,
+                    sample_rate=sample_rate,
+                )
+                original_data = waveform.read(num_frames)
+                frames_written = encoder.write(original_data)
+                assert frames_written == num_frames
+
+            # Decode the file back
+            decoder = cyminiaudio.Decoder(path)
+            assert decoder.channels == channels
+            assert decoder.sample_rate == sample_rate
+
+            decoded_data = decoder.read(num_frames)
+            decoder.close()
+
+            # Verify frame count matches
+            original_samples = struct.unpack(f"<{num_frames * channels}f", original_data)
+            decoded_samples = struct.unpack(f"<{num_frames * channels}f", decoded_data)
+            assert len(decoded_samples) == len(original_samples)
+
+            # Verify data integrity (WAV is lossless, so samples should match closely)
+            max_diff = max(
+                abs(a - b) for a, b in zip(original_samples, decoded_samples, strict=True)
+            )
+            assert max_diff < 1e-4, f"Max sample difference {max_diff} exceeds tolerance"
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
+
 
 class TestNodeGraph:
     """Test node graph classes."""
@@ -1074,20 +1122,382 @@ class TestAdditionalNodes:
             assert biquad.state == cyminiaudio.NodeState.STARTED
 
 
-# Interactive tests - require user input, skip in automated runs
-@pytest.mark.skip(reason="Interactive: requires user input")
-def test_play_sine():
-    cyminiaudio.play_sine()
+class TestIntegration:
+    """Integration tests combining multiple components."""
+
+    def test_waveform_through_filter(self):
+        """Test generating a waveform and processing it through a low-pass filter."""
+        waveform = cyminiaudio.Waveform(
+            waveform_type=cyminiaudio.WaveformType.SAWTOOTH,
+            frequency=440.0,
+            channels=2,
+            sample_rate=48000,
+        )
+        data = waveform.read(1024)
+        assert len(data) == 1024 * 2 * 4  # frames * channels * sizeof(float)
+
+        lpf = cyminiaudio.LowPassFilter(cutoff=1000.0, channels=2, sample_rate=48000)
+        filtered = lpf.process(data)
+        assert len(filtered) == len(data)
+        # Filtered output should differ from input (sawtooth has harmonics above 1kHz)
+        assert filtered != data
+
+    def test_waveform_encode_decode_filter(self):
+        """Test waveform -> encode -> decode -> filter pipeline."""
+        import os
+        import struct
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            path = f.name
+
+        channels = 2
+        sample_rate = 48000
+        num_frames = 2048
+
+        try:
+            # Generate waveform and encode to file
+            waveform = cyminiaudio.Waveform(
+                waveform_type=cyminiaudio.WaveformType.SINE,
+                frequency=440.0,
+                channels=channels,
+                sample_rate=sample_rate,
+            )
+            original = waveform.read(num_frames)
+
+            with cyminiaudio.Encoder(path, channels=channels, sample_rate=sample_rate) as enc:
+                enc.write(original)
+
+            # Decode from file
+            with cyminiaudio.Decoder(path) as dec:
+                assert dec.channels == channels
+                assert dec.sample_rate == sample_rate
+                decoded = dec.read(num_frames)
+
+            # Process decoded audio through a high-pass filter
+            hpf = cyminiaudio.HighPassFilter(
+                cutoff=200.0, channels=channels, sample_rate=sample_rate
+            )
+            filtered = hpf.process(decoded)
+            assert len(filtered) == len(decoded)
+
+            # 440Hz sine is above the 200Hz cutoff, so most energy should pass through
+            original_samples = struct.unpack(f"<{num_frames * channels}f", decoded)
+            filtered_samples = struct.unpack(f"<{num_frames * channels}f", filtered)
+
+            original_energy = sum(s * s for s in original_samples)
+            filtered_energy = sum(s * s for s in filtered_samples)
+            # HPF at 200Hz should pass most of a 440Hz sine (>50% energy)
+            assert filtered_energy > original_energy * 0.5
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
+
+    def test_node_graph_splitter_to_lpf(self):
+        """Test SplitterNode -> LPFNode -> endpoint pipeline in NodeGraph."""
+        with cyminiaudio.NodeGraph(channels=2) as graph:
+            splitter = cyminiaudio.SplitterNode(graph, channels=2)
+            lpf = cyminiaudio.LPFNode(graph, cutoff=2000.0, channels=2)
+
+            # Connect: splitter -> lpf
+            splitter.attach_output(0, lpf, 0)
+
+            assert splitter.state == cyminiaudio.NodeState.STARTED
+            assert lpf.state == cyminiaudio.NodeState.STARTED
+
+    def test_multiple_filters_chained(self):
+        """Test audio data through multiple filters in sequence."""
+        waveform = cyminiaudio.Waveform(
+            waveform_type=cyminiaudio.WaveformType.SAWTOOTH,
+            frequency=1000.0,
+            channels=2,
+            sample_rate=48000,
+        )
+        data = waveform.read(1024)
+
+        # Chain: LPF -> HPF -> Notch (bandpass-like behavior)
+        lpf = cyminiaudio.LowPassFilter(cutoff=5000.0, channels=2, sample_rate=48000)
+        hpf = cyminiaudio.HighPassFilter(cutoff=200.0, channels=2, sample_rate=48000)
+        notch = cyminiaudio.NotchFilter(frequency=3000.0, channels=2, sample_rate=48000)
+
+        step1 = lpf.process(data)
+        step2 = hpf.process(step1)
+        step3 = notch.process(step2)
+
+        assert len(step3) == len(data)
+        # Each filter should modify the signal
+        assert step1 != data
+        assert step3 != step1
+
+    def test_panner_and_volume(self):
+        """Test panning and volume applied to waveform data."""
+        import struct
+
+        channels = 2
+        num_frames = 512
+
+        waveform = cyminiaudio.Waveform(frequency=440.0, channels=channels)
+        data = waveform.read(num_frames)
+
+        # Apply volume reduction
+        quieter = cyminiaudio.apply_volume_factor_pcm_frames(data, 0.5, channels=channels)
+        orig_samples = struct.unpack(f"<{num_frames * channels}f", data)
+        quiet_samples = struct.unpack(f"<{num_frames * channels}f", quieter)
+
+        orig_energy = sum(s * s for s in orig_samples)
+        quiet_energy = sum(s * s for s in quiet_samples)
+        # Half volume means quarter energy
+        assert abs(quiet_energy - orig_energy * 0.25) < orig_energy * 0.01
+
+        # Pan hard left
+        panner = cyminiaudio.Panner(channels=channels)
+        panner.pan = -1.0
+        panned = panner.process(data)
+        assert len(panned) == len(data)
+
+    def test_resampler_and_channel_convert(self):
+        """Test resampling then channel conversion."""
+        waveform = cyminiaudio.Waveform(frequency=440.0, channels=1, sample_rate=44100)
+        mono_data = waveform.read(1024)
+
+        # Resample 44100 -> 48000
+        resampler = cyminiaudio.LinearResampler(
+            channels=1, sample_rate_in=44100, sample_rate_out=48000
+        )
+        resampled = resampler.process(mono_data)
+        assert len(resampled) > 0
+
+        # Convert mono -> stereo
+        converter = cyminiaudio.ChannelConverter(channels_in=1, channels_out=2)
+        stereo = converter.process(resampled)
+        assert len(stereo) > 0
+        # Stereo should be roughly 2x the size of mono input
+        assert len(stereo) >= len(resampled) * 2 * 0.9
+
+    def test_engine_sound_lifecycle(self):
+        """Test Engine -> Sound creation, property manipulation, and cleanup."""
+        with cyminiaudio.Engine() as engine:
+            sound = cyminiaudio.Sound(engine, SOUNDFILE)
+
+            # Verify sound properties
+            assert sound.path == SOUNDFILE
+            assert not sound.is_playing
+
+            # Manipulate properties before playback
+            sound.volume = 0.3
+            assert abs(sound.volume - 0.3) < 0.01
+
+            sound.pitch = 1.5
+            assert abs(sound.pitch - 1.5) < 0.01
+
+            sound.pan = -0.5
+            assert abs(sound.pan - -0.5) < 0.01
+
+            sound.looping = True
+            assert sound.looping
+
+            # Seek to beginning
+            sound.seek(0)
+            assert sound.cursor == 0
+
+            sound.close()
+
+    def test_engine_play_data_source_waveform(self):
+        """Test Engine.play_data_source with a Waveform."""
+        with cyminiaudio.Engine() as engine:
+            waveform = cyminiaudio.Waveform(
+                waveform_type=cyminiaudio.WaveformType.SINE,
+                frequency=440.0,
+            )
+            sound = engine.play_data_source(waveform, volume=0.3)
+            assert sound.is_playing
+            assert abs(sound.volume - 0.3) < 0.01
+            sound.stop()
+            sound.close()
+
+    def test_engine_play_data_source_decoder(self):
+        """Test Engine.play_data_source with a Decoder playing beat.wav."""
+        with cyminiaudio.Engine() as engine:
+            decoder = cyminiaudio.Decoder(SOUNDFILE)
+            sound = engine.play_data_source(decoder, volume=0.5)
+            assert sound.is_playing
+            assert abs(sound.volume - 0.5) < 0.01
+            sound.stop()
+            sound.close()
+            decoder.close()
+
+    def test_engine_play_data_source_noise(self):
+        """Test Engine.play_data_source with Noise."""
+        with cyminiaudio.Engine() as engine:
+            noise = cyminiaudio.Noise(noise_type=cyminiaudio.NoiseType.WHITE)
+            sound = engine.play_data_source(noise, looping=True)
+            assert sound.is_playing
+            assert sound.looping
+            sound.stop()
+            sound.close()
+
+    def test_audio_buffer_through_filter(self):
+        """Test AudioBuffer as data source processed through a filter."""
+        import struct
+
+        channels = 2
+        num_frames = 256
+
+        # Create a buffer with known data (ascending ramp)
+        samples = [float(i) / num_frames for i in range(num_frames * channels)]
+        data = struct.pack(f"<{len(samples)}f", *samples)
+
+        buf = cyminiaudio.AudioBuffer(data, channels=channels)
+        read_back = buf.read(num_frames)
+        assert len(read_back) == len(data)
+
+        # Filter the buffer data
+        lpf = cyminiaudio.LowPassFilter(cutoff=5000.0, channels=channels)
+        filtered = lpf.process(read_back)
+        assert len(filtered) == len(read_back)
 
 
-@pytest.mark.skip(reason="Interactive: requires user input")
-def test_play_file():
-    cyminiaudio.play_file(SOUNDFILE)
+class TestConcurrency:
+    """Test GIL release enables true multithreaded operation."""
 
+    def test_parallel_filter_processing(self):
+        """Test that multiple filters can process concurrently via threads."""
+        import threading
 
-@pytest.mark.skip(reason="Interactive: requires user input")
-def test_engine_play_file():
-    cyminiaudio.engine_play_file(SOUNDFILE)
+        channels = 2
+        num_frames = 4096
+
+        waveform = cyminiaudio.Waveform(frequency=440.0, channels=channels)
+        data = waveform.read(num_frames)
+        results = [None] * 4
+        errors = []
+
+        def run_filter(index, filter_obj, input_data):
+            try:
+                results[index] = filter_obj.process(input_data)
+            except Exception as e:
+                errors.append((index, e))
+
+        filters = [
+            cyminiaudio.LowPassFilter(cutoff=1000.0, channels=channels),
+            cyminiaudio.HighPassFilter(cutoff=500.0, channels=channels),
+            cyminiaudio.BandPassFilter(cutoff=1000.0, channels=channels),
+            cyminiaudio.NotchFilter(frequency=2000.0, channels=channels),
+        ]
+
+        threads = [
+            threading.Thread(target=run_filter, args=(i, f, data)) for i, f in enumerate(filters)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5.0)
+
+        assert not errors, f"Thread errors: {errors}"
+        for i, result in enumerate(results):
+            assert result is not None, f"Filter {i} produced no output"
+            assert len(result) == len(data)
+
+    def test_parallel_decoder_reads(self):
+        """Test that multiple decoders can read concurrently."""
+        import threading
+
+        num_decoders = 4
+        results = [None] * num_decoders
+        errors = []
+
+        def read_decoder(index):
+            try:
+                with cyminiaudio.Decoder(SOUNDFILE) as dec:
+                    results[index] = dec.read(1024)
+            except Exception as e:
+                errors.append((index, e))
+
+        threads = [threading.Thread(target=read_decoder, args=(i,)) for i in range(num_decoders)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5.0)
+
+        assert not errors, f"Thread errors: {errors}"
+        for i, result in enumerate(results):
+            assert result is not None, f"Decoder {i} produced no output"
+            assert len(result) > 0
+
+    def test_parallel_waveform_generation(self):
+        """Test concurrent waveform generation across threads."""
+        import threading
+
+        num_threads = 4
+        results = [None] * num_threads
+        errors = []
+
+        def generate_waveform(index, freq):
+            try:
+                wf = cyminiaudio.Waveform(frequency=freq, channels=2)
+                results[index] = wf.read(4096)
+            except Exception as e:
+                errors.append((index, e))
+
+        threads = [
+            threading.Thread(target=generate_waveform, args=(i, 220.0 * (i + 1)))
+            for i in range(num_threads)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5.0)
+
+        assert not errors, f"Thread errors: {errors}"
+        for i, result in enumerate(results):
+            assert result is not None, f"Waveform {i} produced no output"
+            assert len(result) == 4096 * 2 * 4  # frames * channels * sizeof(float)
+
+    def test_parallel_encode_decode(self):
+        """Test concurrent encode and decode operations."""
+        import os
+        import tempfile
+        import threading
+
+        channels = 2
+        sample_rate = 48000
+        num_frames = 2048
+        num_threads = 3
+        paths = []
+        errors = []
+
+        for _ in range(num_threads):
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                paths.append(f.name)
+
+        waveform = cyminiaudio.Waveform(frequency=440.0, channels=channels)
+        data = waveform.read(num_frames)
+
+        def encode_then_decode(index, path):
+            try:
+                with cyminiaudio.Encoder(path, channels=channels, sample_rate=sample_rate) as enc:
+                    enc.write(data)
+                with cyminiaudio.Decoder(path) as dec:
+                    decoded = dec.read(num_frames)
+                    assert len(decoded) > 0
+            except Exception as e:
+                errors.append((index, e))
+
+        try:
+            threads = [
+                threading.Thread(target=encode_then_decode, args=(i, p))
+                for i, p in enumerate(paths)
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=10.0)
+
+            assert not errors, f"Thread errors: {errors}"
+        finally:
+            for p in paths:
+                if os.path.exists(p):
+                    os.unlink(p)
 
 
 if __name__ == "__main__":

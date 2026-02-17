@@ -1,41 +1,13 @@
-name: Build Wheels
+name: Release to PyPI
 
 on:
   push:
-    branches: [main]
     tags: ["v*"]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  test:
-    name: Test on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        python-version: ["3.12"]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-
-      - name: Install ALSA (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
-
-      - name: Build and test
-        run: |
-          uv sync
-          uv run pytest tests/ -v
-
-      - name: Lint
-        run: uv run ruff check src/ tests/
-
   build_wheels:
     name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -88,10 +60,13 @@ jobs:
           name: sdist
           path: ./dist/*.tar.gz
 
-  collect_artifacts:
-    name: Collect all distributions
+  publish:
+    name: Publish to PyPI
     needs: [build_wheels, build_sdist]
     runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
 
     steps:
       - name: Download all wheels (Ubuntu)
@@ -118,16 +93,13 @@ jobs:
           name: sdist
           path: dist/
 
-      - name: List all distributions
+      - name: List distributions
         run: |
-          echo "=== All distributions ==="
+          echo "=== Distributions to publish ==="
           ls -la dist/
           echo ""
-          echo "=== Wheel count: $(ls dist/*.whl 2>/dev/null | wc -l) ==="
-          echo "=== Sdist count: $(ls dist/*.tar.gz 2>/dev/null | wc -l) ==="
+          echo "Wheels: $(ls dist/*.whl 2>/dev/null | wc -l)"
+          echo "Sdists: $(ls dist/*.tar.gz 2>/dev/null | wc -l)"
 
-      - name: Upload combined distributions
-        uses: actions/upload-artifact@v4
-        with:
-          name: all-distributions
-          path: dist/
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

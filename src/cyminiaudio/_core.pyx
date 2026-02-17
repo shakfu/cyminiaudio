@@ -22,8 +22,6 @@ from libc.string cimport memset, memcpy
 DEF MA_NO_DECODING = 0
 DEF MA_NO_ENCODING = 1
 
-DEF DEVICE_CHANNELS = 2
-DEF DEVICE_SAMPLE_RATE = 48000
 
 
 # -----------------------------------------------------------------------------
@@ -305,7 +303,7 @@ cdef class Engine:
         """Set the current time in PCM frames."""
         if not self._initialized:
             raise EngineError("Engine not initialized")
-        lib.ma_engine_set_time_in_pcm_frames(&self._engine, value)
+        _check_result(lib.ma_engine_set_time_in_pcm_frames(&self._engine, value))
 
     @property
     def time_ms(self) -> int:
@@ -326,7 +324,7 @@ cdef class Engine:
         """Set the master volume (0.0 to 1.0+)."""
         if not self._initialized:
             raise EngineError("Engine not initialized")
-        lib.ma_engine_set_volume(&self._engine, value)
+        _check_result(lib.ma_engine_set_volume(&self._engine, value))
 
     @property
     def gain_db(self) -> float:
@@ -340,7 +338,7 @@ cdef class Engine:
         """Set the master gain in decibels."""
         if not self._initialized:
             raise EngineError("Engine not initialized")
-        lib.ma_engine_set_gain_db(&self._engine, value)
+        _check_result(lib.ma_engine_set_gain_db(&self._engine, value))
 
     @property
     def listener_count(self) -> int:
@@ -376,6 +374,27 @@ cdef class Engine:
             Sound object for controlling playback
         """
         sound = Sound(self, path)
+        sound.looping = looping
+        sound.volume = volume
+        sound.start()
+        return sound
+
+    def play_data_source(self, object data_source, bint looping=False,
+                         float volume=1.0) -> Sound:
+        """
+        Play a data source (Waveform, Noise, Decoder, AudioBuffer, etc.).
+
+        Args:
+            data_source: A data source object to play
+            looping: Whether to loop the sound
+            volume: Initial volume (0.0 to 1.0+)
+
+        Returns:
+            Sound object for controlling playback
+        """
+        if not self._initialized:
+            raise EngineError("Engine not initialized")
+        sound = Sound(self, data_source)
         sound.looping = looping
         sound.volume = volume
         sound.start()
@@ -468,10 +487,19 @@ SOUND_FLAG_NO_SPATIALIZATION = lib.MA_SOUND_FLAG_NO_SPATIALIZATION
 
 cdef class Sound:
     """
-    A playable sound loaded from a file.
+    A playable sound loaded from a file or data source.
 
     Sounds provide full control over playback including volume, pitch, pan,
     looping, seeking, and 3D spatialization.
+
+    The Sound holds an internal reference to its parent Engine, so the Engine
+    will not be garbage collected while any Sound created from it is alive.
+    However, explicitly closing the Engine while Sounds are still in use will
+    invalidate them. Always close Sounds before their Engine.
+
+    When created from a data source (Waveform, Noise, etc.), the Sound also
+    holds a reference to the data source to prevent it from being garbage
+    collected during playback.
 
     Example:
         engine = Engine()
@@ -484,23 +512,43 @@ cdef class Sound:
     cdef Engine _engine
     cdef bint _initialized
     cdef str _path
+    cdef object _data_source  # Keep reference to data source if used
 
     def __cinit__(self):
         self._initialized = False
         self._engine = None
+        self._data_source = None
 
-    def __init__(self, Engine engine not None, str path, lib.ma_uint32 flags=0):
+    def __init__(self, Engine engine not None, source=None, lib.ma_uint32 flags=0,
+                 str path=None):
         """
-        Load a sound from a file.
+        Initialize a sound from a file path or data source.
 
         Args:
             engine: The Engine instance to use
-            path: Path to the audio file
+            source: File path (str) or data source (Waveform, Noise, Decoder,
+                    AudioBuffer, AudioBufferRef)
             flags: Sound flags (SOUND_FLAG_STREAM, SOUND_FLAG_DECODE, etc.)
+            path: Alias for source when passing a file path (deprecated form)
         """
         if not engine._initialized:
             raise EngineError("Engine not initialized")
 
+        # Support both Sound(engine, "file.wav") and Sound(engine, path="file.wav")
+        if source is None and path is not None:
+            source = path
+        if source is None:
+            raise SoundError("A file path or data source is required")
+
+        cdef lib.ma_result result
+
+        if isinstance(source, str):
+            self._init_from_file(engine, source, flags)
+        else:
+            self._init_from_data_source(engine, source, flags)
+
+    cdef _init_from_file(self, Engine engine, str path, lib.ma_uint32 flags):
+        """Initialize a sound from a file path."""
         cdef bytes path_bytes = path.encode('utf-8')
         cdef lib.ma_result result
 
@@ -518,6 +566,39 @@ cdef class Sound:
         self._engine = engine
         self._initialized = True
         self._path = path
+
+    cdef _init_from_data_source(self, Engine engine, object data_source, lib.ma_uint32 flags):
+        """Initialize a sound from a data source."""
+        cdef lib.ma_data_source* ds_ptr = NULL
+        cdef lib.ma_result result
+
+        if isinstance(data_source, Waveform):
+            ds_ptr = <lib.ma_data_source*>&(<Waveform>data_source)._waveform
+        elif isinstance(data_source, Noise):
+            ds_ptr = <lib.ma_data_source*>&(<Noise>data_source)._noise
+        elif isinstance(data_source, Decoder):
+            ds_ptr = <lib.ma_data_source*>&(<Decoder>data_source)._decoder
+        elif isinstance(data_source, AudioBuffer):
+            ds_ptr = <lib.ma_data_source*>&(<AudioBuffer>data_source)._buffer
+        elif isinstance(data_source, AudioBufferRef):
+            ds_ptr = <lib.ma_data_source*>&(<AudioBufferRef>data_source)._ref
+        else:
+            raise SoundError(f"Unsupported data source type: {type(data_source).__name__}")
+
+        result = lib.ma_sound_init_from_data_source(
+            &engine._engine,
+            ds_ptr,
+            flags,
+            NULL,  # pGroup
+            &self._sound
+        )
+        if result != lib.MA_SUCCESS:
+            raise SoundError(f"Failed to initialize sound from data source (error {result})")
+
+        self._engine = engine
+        self._initialized = True
+        self._data_source = data_source
+        self._path = ""
 
     def __dealloc__(self):
         if self._initialized:
@@ -974,7 +1055,7 @@ cdef class Waveform:
         """Set the amplitude."""
         if not self._initialized:
             raise MinimaError("Waveform not initialized")
-        lib.ma_waveform_set_amplitude(&self._waveform, value)
+        _check_result(lib.ma_waveform_set_amplitude(&self._waveform, value))
 
     @property
     def frequency(self) -> float:
@@ -988,7 +1069,7 @@ cdef class Waveform:
         """Set the frequency."""
         if not self._initialized:
             raise MinimaError("Waveform not initialized")
-        lib.ma_waveform_set_frequency(&self._waveform, value)
+        _check_result(lib.ma_waveform_set_frequency(&self._waveform, value))
 
     @property
     def waveform_type(self) -> int:
@@ -1002,14 +1083,16 @@ cdef class Waveform:
         """Set the waveform type."""
         if not self._initialized:
             raise MinimaError("Waveform not initialized")
-        lib.ma_waveform_set_type(&self._waveform, <lib.ma_waveform_type>value)
+        _check_result(lib.ma_waveform_set_type(&self._waveform, <lib.ma_waveform_type>value))
 
     def seek(self, lib.ma_uint64 frame):
         """Seek to a specific PCM frame."""
         if not self._initialized:
             raise MinimaError("Waveform not initialized")
+        cdef lib.ma_result result
         with nogil:
-            lib.ma_waveform_seek_to_pcm_frame(&self._waveform, frame)
+            result = lib.ma_waveform_seek_to_pcm_frame(&self._waveform, frame)
+        _check_result(result)
 
     def read(self, lib.ma_uint64 frame_count) -> bytes:
         """
@@ -1031,9 +1114,11 @@ cdef class Waveform:
         if buffer == NULL:
             raise MemoryError("Failed to allocate buffer")
 
+        cdef lib.ma_result result
         try:
             with nogil:
-                lib.ma_waveform_read_pcm_frames(&self._waveform, buffer, frame_count, &frames_read)
+                result = lib.ma_waveform_read_pcm_frames(&self._waveform, buffer, frame_count, &frames_read)
+            _check_result(result)
             return bytes((<char*>buffer)[:frames_read * self._channels * sizeof(float)])
         finally:
             free(buffer)
@@ -1107,7 +1192,7 @@ cdef class Noise:
         """Set the amplitude."""
         if not self._initialized:
             raise MinimaError("Noise not initialized")
-        lib.ma_noise_set_amplitude(&self._noise, value)
+        _check_result(lib.ma_noise_set_amplitude(&self._noise, value))
 
     @property
     def noise_type(self) -> int:
@@ -1121,13 +1206,13 @@ cdef class Noise:
         """Set the noise type."""
         if not self._initialized:
             raise MinimaError("Noise not initialized")
-        lib.ma_noise_set_type(&self._noise, <lib.ma_noise_type>value)
+        _check_result(lib.ma_noise_set_type(&self._noise, <lib.ma_noise_type>value))
 
     def set_seed(self, int seed):
         """Set the random seed."""
         if not self._initialized:
             raise MinimaError("Noise not initialized")
-        lib.ma_noise_set_seed(&self._noise, seed)
+        _check_result(lib.ma_noise_set_seed(&self._noise, seed))
 
     def read(self, lib.ma_uint64 frame_count) -> bytes:
         """
@@ -1149,9 +1234,11 @@ cdef class Noise:
         if buffer == NULL:
             raise MemoryError("Failed to allocate buffer")
 
+        cdef lib.ma_result result
         try:
             with nogil:
-                lib.ma_noise_read_pcm_frames(&self._noise, buffer, frame_count, &frames_read)
+                result = lib.ma_noise_read_pcm_frames(&self._noise, buffer, frame_count, &frames_read)
+            _check_result(result)
             return bytes((<char*>buffer)[:frames_read * self._channels * sizeof(float)])
         finally:
             free(buffer)
@@ -1319,9 +1406,13 @@ cdef class Decoder:
         if buffer == NULL:
             raise MemoryError("Failed to allocate buffer")
 
+        cdef lib.ma_result result
         try:
             with nogil:
-                lib.ma_decoder_read_pcm_frames(&self._decoder, buffer, frame_count, &frames_read)
+                result = lib.ma_decoder_read_pcm_frames(&self._decoder, buffer, frame_count, &frames_read)
+            # MA_AT_END is expected when reaching end of file
+            if result != lib.MA_AT_END:
+                _check_result(result)
             return bytes((<char*>buffer)[:frames_read * self._decoder.outputChannels * bytes_per_sample])
         finally:
             free(buffer)
@@ -1444,9 +1535,11 @@ cdef class LowPassFilter:
         if output == NULL:
             raise MemoryError("Failed to allocate buffer")
 
+        cdef lib.ma_result result
         try:
             with nogil:
-                lib.ma_lpf_process_pcm_frames(&self._filter, output, <float*>input_ptr, frame_count)
+                result = lib.ma_lpf_process_pcm_frames(&self._filter, output, <float*>input_ptr, frame_count)
+            _check_result(result)
             return bytes((<char*>output)[:data_len])
         finally:
             free(output)
@@ -1539,9 +1632,11 @@ cdef class HighPassFilter:
         if output == NULL:
             raise MemoryError("Failed to allocate buffer")
 
+        cdef lib.ma_result result
         try:
             with nogil:
-                lib.ma_hpf_process_pcm_frames(&self._filter, output, <float*>input_ptr, frame_count)
+                result = lib.ma_hpf_process_pcm_frames(&self._filter, output, <float*>input_ptr, frame_count)
+            _check_result(result)
             return bytes((<char*>output)[:data_len])
         finally:
             free(output)
@@ -1634,9 +1729,11 @@ cdef class BandPassFilter:
         if output == NULL:
             raise MemoryError("Failed to allocate buffer")
 
+        cdef lib.ma_result result
         try:
             with nogil:
-                lib.ma_bpf_process_pcm_frames(&self._filter, output, <float*>input_ptr, frame_count)
+                result = lib.ma_bpf_process_pcm_frames(&self._filter, output, <float*>input_ptr, frame_count)
+            _check_result(result)
             return bytes((<char*>output)[:data_len])
         finally:
             free(output)
@@ -1729,9 +1826,11 @@ cdef class NotchFilter:
         if output == NULL:
             raise MemoryError("Failed to allocate buffer")
 
+        cdef lib.ma_result result
         try:
             with nogil:
-                lib.ma_notch2_process_pcm_frames(&self._filter, output, <float*>input_ptr, frame_count)
+                result = lib.ma_notch2_process_pcm_frames(&self._filter, output, <float*>input_ptr, frame_count)
+            _check_result(result)
             return bytes((<char*>output)[:data_len])
         finally:
             free(output)
@@ -1827,9 +1926,11 @@ cdef class PeakFilter:
         if output == NULL:
             raise MemoryError("Failed to allocate buffer")
 
+        cdef lib.ma_result result
         try:
             with nogil:
-                lib.ma_peak2_process_pcm_frames(&self._filter, output, <float*>input_ptr, frame_count)
+                result = lib.ma_peak2_process_pcm_frames(&self._filter, output, <float*>input_ptr, frame_count)
+            _check_result(result)
             return bytes((<char*>output)[:data_len])
         finally:
             free(output)
@@ -1925,9 +2026,11 @@ cdef class LowShelfFilter:
         if output == NULL:
             raise MemoryError("Failed to allocate buffer")
 
+        cdef lib.ma_result result
         try:
             with nogil:
-                lib.ma_loshelf2_process_pcm_frames(&self._filter, output, <float*>input_ptr, frame_count)
+                result = lib.ma_loshelf2_process_pcm_frames(&self._filter, output, <float*>input_ptr, frame_count)
+            _check_result(result)
             return bytes((<char*>output)[:data_len])
         finally:
             free(output)
@@ -2023,9 +2126,11 @@ cdef class HighShelfFilter:
         if output == NULL:
             raise MemoryError("Failed to allocate buffer")
 
+        cdef lib.ma_result result
         try:
             with nogil:
-                lib.ma_hishelf2_process_pcm_frames(&self._filter, output, <float*>input_ptr, frame_count)
+                result = lib.ma_hishelf2_process_pcm_frames(&self._filter, output, <float*>input_ptr, frame_count)
+            _check_result(result)
             return bytes((<char*>output)[:data_len])
         finally:
             free(output)
@@ -2150,9 +2255,11 @@ cdef class Delay:
         if output == NULL:
             raise MemoryError("Failed to allocate buffer")
 
+        cdef lib.ma_result result
         try:
             with nogil:
-                lib.ma_delay_process_pcm_frames(&self._delay, output, <float*>input_ptr, <lib.ma_uint32>frame_count)
+                result = lib.ma_delay_process_pcm_frames(&self._delay, output, <float*>input_ptr, <lib.ma_uint32>frame_count)
+            _check_result(result)
             return bytes((<char*>output)[:data_len])
         finally:
             free(output)
@@ -2607,7 +2714,7 @@ cdef class NodeGraph:
         """Set the current time in PCM frames."""
         if not self._initialized:
             raise MinimaError("Node graph not initialized")
-        lib.ma_node_graph_set_time(&self._graph, value)
+        _check_result(lib.ma_node_graph_set_time(&self._graph, value))
 
     def read(self, lib.ma_uint64 frame_count) -> bytes:
         """
@@ -2629,9 +2736,11 @@ cdef class NodeGraph:
         if buffer == NULL:
             raise MemoryError("Failed to allocate buffer")
 
+        cdef lib.ma_result result
         try:
             with nogil:
-                lib.ma_node_graph_read_pcm_frames(&self._graph, buffer, frame_count, &frames_read)
+                result = lib.ma_node_graph_read_pcm_frames(&self._graph, buffer, frame_count, &frames_read)
+            _check_result(result)
             return bytes((<char*>buffer)[:frames_read * self._channels * sizeof(float)])
         finally:
             free(buffer)
@@ -2758,13 +2867,13 @@ cdef class SplitterNode:
         """Set the node state."""
         if not self._initialized:
             raise MinimaError("Splitter node not initialized")
-        lib.ma_node_set_state(<lib.ma_node*>&self._node, <lib.ma_node_state>value)
+        _check_result(lib.ma_node_set_state(<lib.ma_node*>&self._node, <lib.ma_node_state>value))
 
     def set_output_volume(self, int output_bus, float volume):
         """Set the volume of an output bus."""
         if not self._initialized:
             raise MinimaError("Splitter node not initialized")
-        lib.ma_node_set_output_bus_volume(<lib.ma_node*>&self._node, output_bus, volume)
+        _check_result(lib.ma_node_set_output_bus_volume(<lib.ma_node*>&self._node, output_bus, volume))
 
     def get_output_volume(self, int output_bus) -> float:
         """Get the volume of an output bus."""
@@ -2864,7 +2973,7 @@ cdef class LPFNode:
         """Detach an output bus."""
         if not self._initialized:
             raise MinimaError("LPF node not initialized")
-        lib.ma_node_detach_output_bus(<lib.ma_node*>&self._node, output_bus)
+        _check_result(lib.ma_node_detach_output_bus(<lib.ma_node*>&self._node, output_bus))
 
     @property
     def state(self) -> int:
@@ -2878,7 +2987,7 @@ cdef class LPFNode:
         """Set the node state."""
         if not self._initialized:
             raise MinimaError("LPF node not initialized")
-        lib.ma_node_set_state(<lib.ma_node*>&self._node, <lib.ma_node_state>value)
+        _check_result(lib.ma_node_set_state(<lib.ma_node*>&self._node, <lib.ma_node_state>value))
 
 
 cdef class HPFNode:
@@ -2970,7 +3079,7 @@ cdef class HPFNode:
         """Detach an output bus."""
         if not self._initialized:
             raise MinimaError("HPF node not initialized")
-        lib.ma_node_detach_output_bus(<lib.ma_node*>&self._node, output_bus)
+        _check_result(lib.ma_node_detach_output_bus(<lib.ma_node*>&self._node, output_bus))
 
     @property
     def state(self) -> int:
@@ -2984,7 +3093,7 @@ cdef class HPFNode:
         """Set the node state."""
         if not self._initialized:
             raise MinimaError("HPF node not initialized")
-        lib.ma_node_set_state(<lib.ma_node*>&self._node, <lib.ma_node_state>value)
+        _check_result(lib.ma_node_set_state(<lib.ma_node*>&self._node, <lib.ma_node_state>value))
 
 
 cdef class BPFNode:
@@ -3076,7 +3185,7 @@ cdef class BPFNode:
         """Detach an output bus."""
         if not self._initialized:
             raise MinimaError("BPF node not initialized")
-        lib.ma_node_detach_output_bus(<lib.ma_node*>&self._node, output_bus)
+        _check_result(lib.ma_node_detach_output_bus(<lib.ma_node*>&self._node, output_bus))
 
     @property
     def state(self) -> int:
@@ -3090,7 +3199,7 @@ cdef class BPFNode:
         """Set the node state."""
         if not self._initialized:
             raise MinimaError("BPF node not initialized")
-        lib.ma_node_set_state(<lib.ma_node*>&self._node, <lib.ma_node_state>value)
+        _check_result(lib.ma_node_set_state(<lib.ma_node*>&self._node, <lib.ma_node_state>value))
 
 
 cdef class DelayNode:
@@ -3215,7 +3324,7 @@ cdef class DelayNode:
         """Detach an output bus."""
         if not self._initialized:
             raise MinimaError("Delay node not initialized")
-        lib.ma_node_detach_output_bus(<lib.ma_node*>&self._node, output_bus)
+        _check_result(lib.ma_node_detach_output_bus(<lib.ma_node*>&self._node, output_bus))
 
     @property
     def state(self) -> int:
@@ -3229,7 +3338,7 @@ cdef class DelayNode:
         """Set the node state."""
         if not self._initialized:
             raise MinimaError("Delay node not initialized")
-        lib.ma_node_set_state(<lib.ma_node*>&self._node, <lib.ma_node_state>value)
+        _check_result(lib.ma_node_set_state(<lib.ma_node*>&self._node, <lib.ma_node_state>value))
 
 
 # -----------------------------------------------------------------------------
@@ -3466,7 +3575,7 @@ cdef class ResourceDataSource:
         """Set whether the source loops."""
         if not self._initialized:
             raise MinimaError("Data source not initialized")
-        lib.ma_resource_manager_data_source_set_looping(&self._source, value)
+        _check_result(lib.ma_resource_manager_data_source_set_looping(&self._source, value))
 
     def seek(self, lib.ma_uint64 frame):
         """Seek to a specific PCM frame."""
@@ -3494,7 +3603,7 @@ cdef class ResourceDataSource:
         cdef lib.ma_format format_out
         cdef lib.ma_uint32 channels
         cdef lib.ma_uint32 sample_rate
-        lib.ma_resource_manager_data_source_get_data_format(&self._source, &format_out, &channels, &sample_rate, NULL, 0)
+        _check_result(lib.ma_resource_manager_data_source_get_data_format(&self._source, &format_out, &channels, &sample_rate, NULL, 0))
 
         cdef int bytes_per_sample
         if format_out == lib.ma_format_u8:
@@ -3513,9 +3622,12 @@ cdef class ResourceDataSource:
         if buffer == NULL:
             raise MemoryError("Failed to allocate buffer")
 
+        cdef lib.ma_result result
         try:
             with nogil:
-                lib.ma_resource_manager_data_source_read_pcm_frames(&self._source, buffer, frame_count, &frames_read)
+                result = lib.ma_resource_manager_data_source_read_pcm_frames(&self._source, buffer, frame_count, &frames_read)
+            if result != lib.MA_AT_END:
+                _check_result(result)
             return bytes((<char*>buffer)[:frames_read * channels * bytes_per_sample])
         finally:
             free(buffer)
@@ -3606,7 +3718,7 @@ cdef class LinearResampler:
         cdef lib.ma_uint64 frames_out
 
         # Calculate expected output frames
-        lib.ma_linear_resampler_get_expected_output_frame_count(&self._resampler, input_frames, &output_frames)
+        _check_result(lib.ma_linear_resampler_get_expected_output_frame_count(&self._resampler, input_frames, &output_frames))
 
         cdef size_t output_size = output_frames * self._channels * sizeof(float)
         cdef float* output = <float*>malloc(output_size)
@@ -3616,8 +3728,8 @@ cdef class LinearResampler:
 
         try:
             frames_out = output_frames
-            lib.ma_linear_resampler_process_pcm_frames(&self._resampler,
-                <const void*>data, &frames_in, output, &frames_out)
+            _check_result(lib.ma_linear_resampler_process_pcm_frames(&self._resampler,
+                <const void*>data, &frames_in, output, &frames_out))
             return bytes((<char*>output)[:frames_out * self._channels * sizeof(float)])
         finally:
             free(output)
@@ -3635,7 +3747,7 @@ cdef class LinearResampler:
         """Reset the resampler state."""
         if not self._initialized:
             raise MinimaError("Resampler not initialized")
-        lib.ma_linear_resampler_reset(&self._resampler)
+        _check_result(lib.ma_linear_resampler_reset(&self._resampler))
 
     @property
     def input_latency(self) -> int:
@@ -3721,8 +3833,8 @@ cdef class ChannelConverter:
             raise MemoryError("Failed to allocate buffer")
 
         try:
-            lib.ma_channel_converter_process_pcm_frames(&self._converter,
-                output, <const void*>data, frame_count)
+            _check_result(lib.ma_channel_converter_process_pcm_frames(&self._converter,
+                output, <const void*>data, frame_count))
             return bytes((<char*>output)[:output_size])
         finally:
             free(output)
@@ -3849,8 +3961,8 @@ cdef class DataConverter:
             raise MemoryError("Failed to allocate buffer")
 
         try:
-            lib.ma_data_converter_process_pcm_frames(&self._converter,
-                <const void*>data, &frames_in, output, &frames_out)
+            _check_result(lib.ma_data_converter_process_pcm_frames(&self._converter,
+                <const void*>data, &frames_in, output, &frames_out))
             return bytes((<char*>output)[:frames_out * self._channels_out * bytes_out])
         finally:
             free(output)
@@ -3859,7 +3971,7 @@ cdef class DataConverter:
         """Reset the converter state."""
         if not self._initialized:
             raise MinimaError("Data converter not initialized")
-        lib.ma_data_converter_reset(&self._converter)
+        _check_result(lib.ma_data_converter_reset(&self._converter))
 
 
 # -----------------------------------------------------------------------------
@@ -3920,7 +4032,7 @@ cdef class Panner:
             raise MemoryError("Failed to allocate buffer")
 
         try:
-            lib.ma_panner_process_pcm_frames(&self._panner, output, <const void*>data, frame_count)
+            _check_result(lib.ma_panner_process_pcm_frames(&self._panner, output, <const void*>data, frame_count))
             return bytes((<char*>output)[:data_len])
         finally:
             free(output)
@@ -4008,7 +4120,7 @@ cdef class Fader:
             raise MemoryError("Failed to allocate buffer")
 
         try:
-            lib.ma_fader_process_pcm_frames(&self._fader, output, <const void*>data, frame_count)
+            _check_result(lib.ma_fader_process_pcm_frames(&self._fader, output, <const void*>data, frame_count))
             return bytes((<char*>output)[:data_len])
         finally:
             free(output)
@@ -4065,7 +4177,7 @@ cdef class Gainer:
         """Set the gain for all channels."""
         if not self._initialized:
             raise MinimaError("Gainer not initialized")
-        lib.ma_gainer_set_gain(&self._gainer, gain)
+        _check_result(lib.ma_gainer_set_gain(&self._gainer, gain))
 
     def process(self, bytes data) -> bytes:
         """Process audio data through the gainer."""
@@ -4080,7 +4192,7 @@ cdef class Gainer:
             raise MemoryError("Failed to allocate buffer")
 
         try:
-            lib.ma_gainer_process_pcm_frames(&self._gainer, output, <const void*>data, frame_count)
+            _check_result(lib.ma_gainer_process_pcm_frames(&self._gainer, output, <const void*>data, frame_count))
             return bytes((<char*>output)[:data_len])
         finally:
             free(output)
@@ -4091,14 +4203,14 @@ cdef class Gainer:
         if not self._initialized:
             return 0.0
         cdef float volume = 0.0
-        lib.ma_gainer_get_master_volume(&self._gainer, &volume)
+        _check_result(lib.ma_gainer_get_master_volume(&self._gainer, &volume))
         return volume
 
     @master_volume.setter
     def master_volume(self, float value):
         if not self._initialized:
             raise MinimaError("Gainer not initialized")
-        lib.ma_gainer_set_master_volume(&self._gainer, value)
+        _check_result(lib.ma_gainer_set_master_volume(&self._gainer, value))
 
 
 # -----------------------------------------------------------------------------
@@ -4280,8 +4392,8 @@ cdef class Spatializer:
             raise MemoryError("Failed to allocate buffer")
 
         try:
-            lib.ma_spatializer_process_pcm_frames(&self._spatializer,
-                &listener._listener, output, <const void*>data, frame_count)
+            _check_result(lib.ma_spatializer_process_pcm_frames(&self._spatializer,
+                &listener._listener, output, <const void*>data, frame_count))
             return bytes((<char*>output)[:output_size])
         finally:
             free(output)
@@ -4467,7 +4579,7 @@ cdef class AudioBuffer:
         if not self._initialized:
             return 0
         cdef lib.ma_uint64 cursor = 0
-        lib.ma_audio_buffer_get_cursor_in_pcm_frames(&self._buffer, &cursor)
+        _check_result(lib.ma_audio_buffer_get_cursor_in_pcm_frames(&self._buffer, &cursor))
         return cursor
 
     @property
@@ -4476,7 +4588,7 @@ cdef class AudioBuffer:
         if not self._initialized:
             return 0
         cdef lib.ma_uint64 length = 0
-        lib.ma_audio_buffer_get_length_in_pcm_frames(&self._buffer, &length)
+        _check_result(lib.ma_audio_buffer_get_length_in_pcm_frames(&self._buffer, &length))
         return length
 
     @property
@@ -4492,7 +4604,7 @@ cdef class AudioBuffer:
         if not self._initialized:
             return 0
         cdef lib.ma_uint64 available = 0
-        lib.ma_audio_buffer_get_available_frames(&self._buffer, &available)
+        _check_result(lib.ma_audio_buffer_get_available_frames(&self._buffer, &available))
         return available
 
 
@@ -4882,7 +4994,7 @@ cdef class AudioBufferRef:
         if not self._initialized:
             return 0
         cdef lib.ma_uint64 cursor = 0
-        lib.ma_audio_buffer_ref_get_cursor_in_pcm_frames(&self._ref, &cursor)
+        _check_result(lib.ma_audio_buffer_ref_get_cursor_in_pcm_frames(&self._ref, &cursor))
         return cursor
 
     @property
@@ -4891,7 +5003,7 @@ cdef class AudioBufferRef:
         if not self._initialized:
             return 0
         cdef lib.ma_uint64 length = 0
-        lib.ma_audio_buffer_ref_get_length_in_pcm_frames(&self._ref, &length)
+        _check_result(lib.ma_audio_buffer_ref_get_length_in_pcm_frames(&self._ref, &length))
         return length
 
     @property
@@ -4907,7 +5019,7 @@ cdef class AudioBufferRef:
         if not self._initialized:
             return 0
         cdef lib.ma_uint64 available = 0
-        lib.ma_audio_buffer_ref_get_available_frames(&self._ref, &available)
+        _check_result(lib.ma_audio_buffer_ref_get_available_frames(&self._ref, &available))
         return available
 
 
@@ -5027,7 +5139,7 @@ cdef class PagedAudioBuffer:
         cdef lib.ma_uint64 frames_read = 0
         cdef size_t bytes_read
         try:
-            lib.ma_paged_audio_buffer_read_pcm_frames(&self._buffer, output, frame_count, &frames_read)
+            _check_result(lib.ma_paged_audio_buffer_read_pcm_frames(&self._buffer, output, frame_count, &frames_read))
             bytes_read = frames_read * self._channels * bytes_per_sample
             return bytes((<char*>output)[:bytes_read])
         finally:
@@ -5067,7 +5179,7 @@ cdef class PagedAudioBuffer:
         if not self._initialized:
             return 0
         cdef lib.ma_uint64 cursor = 0
-        lib.ma_paged_audio_buffer_get_cursor_in_pcm_frames(&self._buffer, &cursor)
+        _check_result(lib.ma_paged_audio_buffer_get_cursor_in_pcm_frames(&self._buffer, &cursor))
         return cursor
 
     @property
@@ -5076,7 +5188,7 @@ cdef class PagedAudioBuffer:
         if not self._initialized:
             return 0
         cdef lib.ma_uint64 length = 0
-        lib.ma_paged_audio_buffer_get_length_in_pcm_frames(&self._buffer, &length)
+        _check_result(lib.ma_paged_audio_buffer_get_length_in_pcm_frames(&self._buffer, &length))
         return length
 
     @property
@@ -5179,14 +5291,18 @@ cdef class Device:
         """Start the device."""
         if not self._initialized:
             raise DeviceError("Device not initialized")
-        cdef lib.ma_result result = lib.ma_device_start(&self._device)
+        cdef lib.ma_result result
+        with nogil:
+            result = lib.ma_device_start(&self._device)
         _check_result(result)
 
     def stop(self):
         """Stop the device."""
         if not self._initialized:
             raise DeviceError("Device not initialized")
-        cdef lib.ma_result result = lib.ma_device_stop(&self._device)
+        cdef lib.ma_result result
+        with nogil:
+            result = lib.ma_device_stop(&self._device)
         _check_result(result)
 
     def close(self):
@@ -5361,7 +5477,7 @@ cdef class DataSourceNode:
     def is_looping(self, bint value):
         if not self._initialized:
             raise MinimaError("Data source node not initialized")
-        lib.ma_data_source_node_set_looping(&self._node, value)
+        _check_result(lib.ma_data_source_node_set_looping(&self._node, value))
 
     @property
     def state(self) -> int:
@@ -5439,7 +5555,7 @@ def mix_pcm_frames_f32(bytes dst, bytes src, float volume=1.0, int channels=2) -
         # Copy dst to output
         memcpy(output, <const void*>dst, data_len)
         # Mix src into output
-        lib.ma_mix_pcm_frames_f32(output, <const float*>src_ptr, frame_count, channels, volume)
+        _check_result(lib.ma_mix_pcm_frames_f32(output, <const float*>src_ptr, frame_count, channels, volume))
         return bytes((<char*>output)[:data_len])
     finally:
         free(output)
@@ -5598,127 +5714,3 @@ def copy_and_apply_volume_factor_pcm_frames_f32(bytes src, float factor, int cha
     finally:
         free(dst)
 
-
-# -----------------------------------------------------------------------------
-# Legacy compatibility functions
-# -----------------------------------------------------------------------------
-
-def play_sine(double amp=0.2, double freq=220):
-    """
-    Play a sine wave (interactive demo function).
-
-    Note: This function blocks waiting for user input. For production use,
-    use the Engine and Waveform classes instead.
-    """
-    cdef lib.ma_waveform sineWave
-    cdef lib.ma_device_config deviceConfig
-    cdef lib.ma_device device
-    cdef lib.ma_waveform_config sineWaveConfig
-
-    sineWaveConfig = lib.ma_waveform_config_init(
-        lib.ma_format_f32,
-        DEVICE_CHANNELS, DEVICE_SAMPLE_RATE,
-        lib.ma_waveform_type_sine, amp, freq)
-
-    lib.ma_waveform_init(&sineWaveConfig, &sineWave)
-
-    deviceConfig = lib.ma_device_config_init(lib.ma_device_type_playback)
-    deviceConfig.playback.format   = lib.ma_format_f32
-    deviceConfig.playback.channels = DEVICE_CHANNELS
-    deviceConfig.sampleRate        = DEVICE_SAMPLE_RATE
-    deviceConfig.dataCallback      = _sine_data_callback
-    deviceConfig.pUserData         = &sineWave
-
-    if lib.ma_device_init(NULL, &deviceConfig, &device) != lib.MA_SUCCESS:
-        print("Failed to open playback device.")
-        return -4
-
-    print("Device Name: %s" % device.playback.name.decode())
-
-    if lib.ma_device_start(&device) != lib.MA_SUCCESS:
-        print("Failed to start playback device.")
-        lib.ma_device_uninit(&device)
-        return -5
-
-    if input("Press Enter to quit...\n") == '':
-        lib.ma_device_uninit(&device)
-
-
-cdef void _sine_data_callback(lib.ma_device* device,
-                              void* output,
-                              const void* input_,
-                              lib.ma_uint32 frame_count) noexcept nogil:
-    """Callback for play_sine function."""
-    cdef lib.ma_waveform* sinewave = <lib.ma_waveform*>device.pUserData
-    lib.ma_waveform_read_pcm_frames(sinewave, output, frame_count, NULL)
-
-
-def play_file(str path):
-    """
-    Play an audio file (interactive demo function).
-
-    Note: This function blocks waiting for user input. For production use,
-    use the Engine class instead.
-    """
-    cdef lib.ma_result result
-    cdef lib.ma_decoder decoder
-    cdef lib.ma_device_config deviceConfig
-    cdef lib.ma_device device
-
-    result = lib.ma_decoder_init_file(path.encode('utf8'), NULL, &decoder)
-    if result != lib.MA_SUCCESS:
-        print(f"Failed to open file: {path}")
-        return
-
-    deviceConfig = lib.ma_device_config_init(lib.ma_device_type_playback)
-    deviceConfig.playback.format   = decoder.outputFormat
-    deviceConfig.playback.channels = decoder.outputChannels
-    deviceConfig.sampleRate        = decoder.outputSampleRate
-    deviceConfig.dataCallback      = _file_data_callback
-    deviceConfig.pUserData         = &decoder
-
-    if lib.ma_device_init(NULL, &deviceConfig, &device) != lib.MA_SUCCESS:
-        print("Failed to open playback device.")
-        lib.ma_decoder_uninit(&decoder)
-        return
-
-    if lib.ma_device_start(&device) != lib.MA_SUCCESS:
-        print("Failed to start playback device.")
-        lib.ma_device_uninit(&device)
-        lib.ma_decoder_uninit(&decoder)
-        return
-
-    if input("Press Enter to quit...\n") == '':
-        lib.ma_device_uninit(&device)
-        lib.ma_decoder_uninit(&decoder)
-
-
-cdef void _file_data_callback(lib.ma_device* device,
-                              void* output, const void* input_,
-                              lib.ma_uint32 frame_count) noexcept nogil:
-    """Callback for play_file function."""
-    cdef lib.ma_decoder* decoder = <lib.ma_decoder*>device.pUserData
-    if decoder == NULL:
-        return
-    lib.ma_decoder_read_pcm_frames(decoder, output, frame_count, NULL)
-
-
-def engine_play_file(str filename):
-    """
-    Play an audio file using the engine (interactive demo function).
-
-    Note: This function blocks waiting for user input. For production use,
-    use the Engine class instead.
-    """
-    cdef lib.ma_result result
-    cdef lib.ma_engine engine
-
-    result = lib.ma_engine_init(NULL, &engine)
-    if result != lib.MA_SUCCESS:
-        print("Failed to initialize audio engine.")
-        return
-
-    lib.ma_engine_play_sound(&engine, filename.encode('utf8'), NULL)
-
-    if input("Press Enter to quit...\n") == '':
-        lib.ma_engine_uninit(&engine)

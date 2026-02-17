@@ -124,20 +124,18 @@ from cyminiaudio._core import (
     copy_and_apply_volume_factor_pcm_frames_f32,
     # PCM utility functions
     copy_pcm_frames,
-    engine_play_file,
     get_default_device,
     # Version
     get_version,
     get_version_numbers,
     list_devices,
     mix_pcm_frames_f32,
-    play_file,
-    # Legacy functions
-    play_sine,
     volume_db_to_linear,
     # Volume utility functions
     volume_linear_to_db,
 )
+
+__version__ = "0.1.2"
 
 __all__ = [
     # Version
@@ -239,10 +237,4 @@ __all__ = [
     "copy_and_apply_volume_factor_pcm_frames",
     "apply_volume_factor_pcm_frames_f32",
     "copy_and_apply_volume_factor_pcm_frames_f32",
-    # Legacy functions
-    "play_sine",
-    "play_file",
-    "engine_play_file",
 ]
-
-__version__ = "0.1.1"

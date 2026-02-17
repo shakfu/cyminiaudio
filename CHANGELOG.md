@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2]
+
+### Added
+
+#### Core
+- `Engine.play_data_source()` - Play a data source (Waveform, Noise, Decoder, AudioBuffer, AudioBufferRef) directly through the engine without writing to a temp file
+- `Sound` now accepts data sources in addition to file paths: `Sound(engine, waveform)` or `Sound(engine, "file.wav")`
+
+#### CI/CD
+- Re-enabled push/PR/workflow_dispatch triggers on build-wheels workflow
+- Added test and lint job to build-wheels workflow (runs on Ubuntu and macOS)
+- New `release.yml` workflow for tag-triggered PyPI publishing via trusted publishing
+
+#### Tests
+- Encoder round-trip test verifying sample-level data integrity
+- 10 integration tests combining multiple components (waveform -> filter, encode -> decode -> filter, node graph pipelines, resampler -> channel converter, engine/sound lifecycle, play_data_source with Waveform/Decoder/Noise)
+- 4 concurrency tests exercising GIL release with parallel threads (filters, decoders, waveforms, encode/decode)
+- Total test count: 141 tests
+
+#### Documentation
+- Architecture diagram and layer overview in README
+- Troubleshooting section in README (Linux ALSA, macOS permissions, CMake, device selection, latency, ABI mismatch)
+
+#### Build
+- `make coverage` target using pytest-cov
+
+### Changed
+- License changed from Public Domain to MIT
+- Minimum Python version raised to 3.10 (was 3.9); updated ruff target-version, classifiers, cibuildwheel config, and Makefile release target accordingly
+- Added Python 3.14 to cibuildwheel build matrix
+- CMake minimum version raised to 3.17 (for WITH_SOABI support)
+
+#### Error Handling
+- Wrapped 55 previously unchecked `ma_result` return values with `_check_result()` across Engine, Sound, Waveform, Noise, Decoder, Encoder, filters, delay, ring buffers, data conversion, node graph, and resource manager
+- Decoder.read() now correctly handles `MA_AT_END` as a non-error condition
+
+#### Performance
+- `Device.start()` and `Device.stop()` now release the GIL during C calls (added `nogil` declarations to `libminiaudio.pxd`)
+
+#### Configuration
+- mypy configured with `strict = true` in pyproject.toml (replaced individual flags)
+- Added mypy per-module override to relax type annotations on test files
+- ruff lint rules expanded: added isort (`I`), bugbear (`B`), comprehensions (`C4`), pyupgrade (`UP`), simplify (`SIM`)
+- Fixed `[project.urls]` to point to correct repository
+- Makefile `release` target now cleans first and uses a loop for Python versions
+
+### Removed
+- `play_sine()`, `play_file()`, `engine_play_file()` legacy interactive demo functions (use `Engine` and `Sound` classes instead)
+- `DEVICE_CHANNELS` and `DEVICE_SAMPLE_RATE` module constants (only used by removed legacy functions)
+
 ## [0.1.1]
 
 ### Added

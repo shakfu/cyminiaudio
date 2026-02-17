@@ -29,7 +29,7 @@ A Cython-based audio library providing high-level Python APIs for audio playback
 pip install cyminiaudio
 ```
 
-To build from source, requires Python 3.9+ and a C compiler.
+To build from source, requires Python 3.10+ and a C compiler.
 
 ```bash
 # Clone the repository
@@ -199,6 +199,47 @@ with cyminiaudio.Device(
     device.stop()
 ```
 
+## Architecture
+
+```
+                        +-------------------+
+                        |      Engine       |  High-level playback
+                        |  (owns Device)    |
+                        +--------+----------+
+                                 |
+                        +--------v----------+
+                        |      Sound        |  Per-file playback control
+                        | volume, pan, pitch|  (holds ref to Engine)
+                        +-------------------+
+
+    +------------+     +-------------------+     +-------------+
+    |  Waveform  |     |    NodeGraph      |     |   Decoder   |
+    |  Noise     +---->| DataSourceNode    +---->|   Encoder   |
+    | AudioBuffer|     | SplitterNode      |     +-------------+
+    +------------+     | LPFNode, HPFNode  |
+      Data Sources     | DelayNode, ...    |     +-------------+
+                       +-------------------+     |   Device    |
+                        Processing Pipeline      |   Context   |
+                                                 +-------------+
+    +------------+     +-------------------+      Low-level I/O
+    | LowPassF.  |     | Panner, Fader     |
+    | HighPassF. |     | Gainer            |     +-------------+
+    | BandPassF. |     | Spatializer       |     | RingBuffer  |
+    | NotchF.    |     | SpatializerList.  |     | PCMRingBuf  |
+    +------------+     +-------------------+     +-------------+
+     Standalone         Volume / Spatial        Real-time Buffers
+      Filters
+```
+
+**Layer overview**:
+
+- **Engine / Sound**: Highest-level API. Engine manages an audio device internally; Sound objects control individual file playback. Sounds hold a reference to their Engine, preventing premature garbage collection.
+- **Data Sources**: Waveform, Noise, AudioBuffer, and Decoder all implement the miniaudio data source interface. They can be read directly or fed into a NodeGraph via DataSourceNode.
+- **NodeGraph**: Build custom processing pipelines by connecting nodes (filters, splitters, delays) together. Audio flows from source nodes through processing nodes to the graph endpoint.
+- **Standalone Filters**: Process PCM data in-place without a NodeGraph. Useful for one-shot batch processing.
+- **Device / Context**: Low-level device access for advanced use cases (custom callbacks, device enumeration).
+- **GIL Release**: All I/O and DSP methods (filter processing, decoding, encoding, device start/stop) release the GIL during C calls, enabling true multithreaded audio processing.
+
 ## API Reference
 
 ### Core Classes
@@ -345,7 +386,7 @@ make clean
 
 ## Requirements
 
-- Python 3.9+
+- Python 3.10+
 - Cython 3.0+
 - CMake 3.15+
 - C compiler (gcc, clang, MSVC)
@@ -356,7 +397,79 @@ make clean
 - **Linux**: ALSA development libraries (`libasound2-dev` on Debian/Ubuntu)
 - **Windows**: Windows SDK
 
+## Troubleshooting
+
+### Linux: "Failed to initialize device" or ALSA errors
+
+Install the ALSA development headers:
+
+```bash
+# Debian/Ubuntu
+sudo apt-get install libasound2-dev
+
+# Fedora/RHEL
+sudo dnf install alsa-lib-devel
+
+# Arch
+sudo pacman -S alsa-lib
+```
+
+### macOS: Microphone permission denied
+
+macOS requires explicit microphone permission for capture devices. When using `DeviceType.CAPTURE` or `DeviceType.DUPLEX`, grant microphone access to your terminal app in System Settings > Privacy & Security > Microphone.
+
+### Build from source fails: "CMake not found"
+
+cyminiaudio requires CMake 3.15+ and Cython 3.0+ to build from source:
+
+```bash
+pip install cmake cython
+# or
+brew install cmake  # macOS
+sudo apt-get install cmake  # Linux
+```
+
+### No sound output / wrong device
+
+List available devices and select a specific one:
+
+```python
+import cyminiaudio as cma
+
+devices = cma.list_devices()
+for dev in devices['playback']:
+    print(f"{dev.name} (default: {dev.is_default})")
+```
+
+### High latency or audio glitches
+
+Reduce the period size for lower latency (at the cost of higher CPU usage):
+
+```python
+device = cma.Device(
+    device_type=cma.DeviceType.PLAYBACK,
+    period_size_ms=10,  # Lower = less latency
+    periods=2,          # Double buffering
+)
+```
+
+### Import error: "undefined symbol" or ABI mismatch
+
+This typically means the installed wheel was built for a different Python version. Reinstall:
+
+```bash
+pip install --force-reinstall cyminiaudio
+```
+
+Or build from source for your exact Python version:
+
+```bash
+pip install --no-binary cyminiaudio cyminiaudio
+```
+
 ## License
+
+MIT
 
 See LICENSE file.
 

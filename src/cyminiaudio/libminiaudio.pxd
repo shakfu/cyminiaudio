@@ -2184,8 +2184,8 @@ cdef extern from "miniaudio.h":
     ma_log* ma_device_get_log(ma_device* pDevice)
     ma_result ma_device_get_info(ma_device* pDevice, ma_device_type type, ma_device_info* pDeviceInfo)
     ma_result ma_device_get_name(ma_device* pDevice, ma_device_type type, char* pName, size_t nameCap, size_t* pLengthNotIncludingNullTerminator)
-    ma_result ma_device_start(ma_device* pDevice)
-    ma_result ma_device_stop(ma_device* pDevice)
+    ma_result ma_device_start(ma_device* pDevice) nogil
+    ma_result ma_device_stop(ma_device* pDevice) nogil
     ma_bool32 ma_device_is_started(const ma_device* pDevice)
     ma_device_state ma_device_get_state(const ma_device* pDevice)
     ma_result ma_device_post_init(ma_device* pDevice, ma_device_type deviceType, const ma_device_descriptor* pPlaybackDescriptor, const ma_device_descriptor* pCaptureDescriptor)

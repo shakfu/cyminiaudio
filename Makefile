@@ -4,7 +4,7 @@
 # This Makefile wraps common build commands for convenience.
 # The actual build is handled by scikit-build-core via pyproject.toml
 
-.PHONY: all sync build rebuild test lint format typecheck clean \
+.PHONY: all sync build rebuild test coverage lint format typecheck clean \
 		distclean wheel sdist dist check publish-test publish help \
 		release
 
@@ -23,6 +23,10 @@ build:
 test:
 	@uv run pytest tests/ -v
 
+# Run tests with coverage
+coverage:
+	@uv run pytest --cov=cyminiaudio --cov-report=term-missing tests/
+
 # Lint with ruff
 lint:
 	@uv run ruff check --fix src/ tests/
@@ -33,7 +37,7 @@ format:
 
 # Type check with mypy
 typecheck:
-	@uv run mypy src/cyminiaudio/__init__.py tests/ --exclude '.venv'
+	@uv run mypy src/cyminiaudio tests/
 
 # Run a full quality assurance check
 qa: test lint typecheck format
@@ -62,14 +66,11 @@ publish: check
 	@uv run twine upload dist/*
 
 # Release multiple wheels
-release:
+release: clean
 	@uv build --sdist
-	@uv build --wheel --python 3.9
-	@uv build --wheel --python 3.10
-	@uv build --wheel --python 3.11
-	@uv build --wheel --python 3.12
-	@uv build --wheel --python 3.13
-	@uv build --wheel --python 3.14
+	@for py in 3.10 3.11 3.12 3.13 3.14; do \
+		uv build --wheel --python $$py; \
+	done
 	@uv run twine check dist/*
 
 # Clean build artifacts
@@ -95,6 +96,7 @@ help:
 	@echo "  build        - Rebuild extension after code changes"
 	@echo "  rebuild      - Alias for build"
 	@echo "  test         - Run tests"
+	@echo "  coverage     - Run tests with coverage report"
 	@echo "  lint         - Lint with ruff"
 	@echo "  format       - Format with ruff"
 	@echo "  typecheck    - Type check with mypy"

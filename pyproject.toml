@@ -1,15 +1,12 @@
 [project]
 name = "cyminiaudio"
-version = "0.1.1"
+version = "0.1.2"
 description = "Minimal Python bindings for miniaudio"
 readme = "README.md"
-license = "Unlicense"
-requires-python = ">=3.9"
+license = "MIT"
+requires-python = ">=3.10"
 authors = [
-    { name = "Your Name", email = "your.email@example.com" }
-]
-maintainers = [
-    { name = "Your Name", email = "your.email@example.com" }
+    { name = "Shakeeb Alireza", email = "shakfu@users.noreply.github.com" }
 ]
 keywords = [
     "audio",
@@ -32,11 +29,11 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Cython",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: Implementation :: CPython",
     "Topic :: Multimedia :: Sound/Audio",
     "Topic :: Multimedia :: Sound/Audio :: Analysis",
@@ -47,11 +44,11 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/cyminiaudio"
-Documentation = "https://github.com/yourusername/cyminiaudio#readme"
-Repository = "https://github.com/yourusername/cyminiaudio.git"
-Issues = "https://github.com/yourusername/cyminiaudio/issues"
-Changelog = "https://github.com/yourusername/cyminiaudio/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/shakfu/cyminiaudio"
+Documentation = "https://github.com/shakfu/cyminiaudio#readme"
+Repository = "https://github.com/shakfu/cyminiaudio.git"
+Issues = "https://github.com/shakfu/cyminiaudio/issues"
+Changelog = "https://github.com/shakfu/cyminiaudio/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["scikit-build-core>=0.10", "cython>=3.0"]
@@ -105,7 +102,7 @@ dev = [
 ]
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 line-length = 100
 src = ["src", "tests"]
 
@@ -130,8 +127,7 @@ known-first-party = ["cyminiaudio"]
 
 [tool.mypy]
 python_version = "3.10"
-warn_return_any = true
-warn_unused_configs = true
+strict = true
 ignore_missing_imports = true
 exclude = [
     "^.venv/",
@@ -139,9 +135,14 @@ exclude = [
     "^dist/",
 ]
 
+[[tool.mypy.overrides]]
+module = "test_cyminiaudio"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
 [tool.cibuildwheel]
 # Build for Python 3.10-3.13
-build = "cp310-* cp311-* cp312-* cp313-*"
+build = "cp310-* cp311-* cp312-* cp313-* cp314-*"
 # Skip 32-bit builds and musllinux (musl has issues with audio libs)
 skip = "*-win32 *-manylinux_i686 *-musllinux_*"
 # Test command
