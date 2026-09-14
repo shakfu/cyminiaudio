@@ -1,8 +1,14 @@
-# cyminiaudio TODO
+# TODO
 
-## To Investigate
+## Critical
 
-- [ ] Cython-level plugin API for user-defined NodeGraph nodes -- enable custom DSP nodes without modifying `_core.pyx`, while keeping processing in C/Cython to avoid GIL overhead on the audio thread
+## High
+
+## Medium
+
+## Low
+
+- [ ] Cython-level plugin API for user-defined NodeGraph nodes -- enable custom DSP nodes without modifying `_core.pyx`, while keeping processing in C/Cython to avoid GIL overhead on the audio thread #to-investigate
 
 ## Not Planned
 
